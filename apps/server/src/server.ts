@@ -28,6 +28,9 @@ import { CheckpointStoreLive } from "./checkpointing/Layers/CheckpointStore.ts";
 import { GitCoreLive } from "./git/Layers/GitCore.ts";
 import { GitHubCliLive } from "./git/Layers/GitHubCli.ts";
 import { GitStatusBroadcasterLive } from "./git/Layers/GitStatusBroadcaster.ts";
+import { JiraClientLive } from "./jira/Services/JiraClient.ts";
+import { JiraCredentialsLive } from "./jira/Services/JiraCredentials.ts";
+import { JiraThreadLinksLive } from "./jira/Services/JiraThreadLinks.ts";
 import { TextGenerationLive } from "./git/Layers/TextGenerationLive.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { TerminalManagerLive } from "./terminal/Layers/Manager.ts";
@@ -196,6 +199,12 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
+const JiraLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(JiraClientLive),
+  Layer.provideMerge(JiraThreadLinksLive),
+  Layer.provideMerge(JiraCredentialsLive),
+);
+
 const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
@@ -204,6 +213,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
+  Layer.provideMerge(JiraLayerLive),
   Layer.provideMerge(ProviderRegistryLive),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`
@@ -229,7 +239,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
-
+).pipe(
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),
   Layer.provideMerge(OpenLive),

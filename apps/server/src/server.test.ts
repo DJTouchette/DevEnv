@@ -65,6 +65,15 @@ import {
   GitStatusBroadcaster,
   type GitStatusBroadcasterShape,
 } from "./git/Services/GitStatusBroadcaster.ts";
+import { JiraClient, type JiraClientShape } from "./jira/Services/JiraClient.ts";
+import {
+  JiraCredentials,
+  type JiraCredentialsShape,
+} from "./jira/Services/JiraCredentials.ts";
+import {
+  JiraThreadLinks,
+  type JiraThreadLinksShape,
+} from "./jira/Services/JiraThreadLinks.ts";
 import { Keybindings, type KeybindingsShape } from "./keybindings.ts";
 import { Open, type OpenShape } from "./open.ts";
 import {
@@ -337,6 +346,9 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    jiraClient?: Partial<JiraClientShape>;
+    jiraCredentials?: Partial<JiraCredentialsShape>;
+    jiraThreadLinks?: Partial<JiraThreadLinksShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -424,6 +436,28 @@ const buildAppUnderTest = (options?: {
           refresh: () => Effect.succeed([]),
           streamChanges: Stream.empty,
           ...options?.layers?.providerRegistry,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(JiraClient)({
+          ...options?.layers?.jiraClient,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(JiraCredentials)({
+          get: Effect.succeed(Option.none()),
+          snapshot: Effect.succeed({ configured: false }),
+          streamChanges: Stream.empty,
+          ...options?.layers?.jiraCredentials,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(JiraThreadLinks)({
+          list: Effect.succeed([]),
+          streamChanges: Stream.empty,
+          get: () => Effect.succeed(Option.none()),
+          unlink: () => Effect.void,
+          ...options?.layers?.jiraThreadLinks,
         }),
       ),
       Layer.provide(
