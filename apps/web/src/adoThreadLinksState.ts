@@ -1,9 +1,6 @@
-import type {
-  AdoPrThreadLink,
-  AdoPrThreadLinksStreamEvent,
-  ThreadId,
-} from "@t3tools/contracts";
+import type { AdoPrThreadLink, AdoPrThreadLinksStreamEvent, ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 import { getPrimaryEnvironmentConnection } from "./environments/runtime";
 
@@ -36,13 +33,28 @@ const useAdoThreadLinksStore = create<AdoThreadLinksState>((set) => ({
 export function useLinkedAdoPullRequest(
   threadId: ThreadId | null | undefined,
 ): AdoPrThreadLink | null {
-  return useAdoThreadLinksStore((store) =>
-    threadId ? (store.links.get(threadId) ?? null) : null,
-  );
+  return useAdoThreadLinksStore((store) => (threadId ? (store.links.get(threadId) ?? null) : null));
 }
 
 export function getLinkedAdoPullRequest(threadId: ThreadId): AdoPrThreadLink | null {
   return useAdoThreadLinksStore.getState().links.get(threadId) ?? null;
+}
+
+// See `useLinkedJiraIssuesForThreads` for behavior. Caller should memoize
+// the threadIds set to keep results stable across renders.
+export function useLinkedAdoPullRequestsForThreads(
+  threadIds: ReadonlySet<ThreadId>,
+): AdoPrThreadLink[] {
+  return useAdoThreadLinksStore(
+    useShallow((store) => {
+      const result: AdoPrThreadLink[] = [];
+      for (const id of threadIds) {
+        const link = store.links.get(id);
+        if (link) result.push(link);
+      }
+      return result;
+    }),
+  );
 }
 
 let unsubscribe: (() => void) | null = null;

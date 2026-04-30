@@ -326,6 +326,25 @@ export function resolveThreadRowClassName(input: {
   return cn(baseClassName, "text-muted-foreground hover:bg-accent hover:text-foreground");
 }
 
+// Mirrors the gating used by `isNonIdleThreadDetailSubscription` in
+// environments/runtime/service.ts so dashboard cards and detail-stream
+// eviction agree on what "active" means.
+export function isActiveThread(
+  thread: Pick<
+    SidebarThreadSummary,
+    "hasPendingApprovals" | "hasPendingUserInput" | "latestTurn" | "session"
+  >,
+): boolean {
+  if (thread.hasPendingApprovals || thread.hasPendingUserInput) {
+    return true;
+  }
+  const status = thread.session?.orchestrationStatus;
+  if (status && status !== "idle" && status !== "stopped") {
+    return true;
+  }
+  return thread.latestTurn?.state === "running";
+}
+
 export function resolveThreadStatusPill(input: {
   thread: ThreadStatusInput;
 }): ThreadStatusPill | null {
