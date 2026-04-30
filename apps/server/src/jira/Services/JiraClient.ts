@@ -56,6 +56,10 @@ export interface JiraClientShape {
     readonly issueKey: JiraIssueKey;
     readonly body: string;
   }) => Effect.Effect<JiraComment, JiraReadError>;
+  readonly listComments: (input: {
+    readonly issueKey: JiraIssueKey;
+    readonly maxResults?: number;
+  }) => Effect.Effect<ReadonlyArray<JiraComment>, JiraReadError>;
 }
 
 export class JiraClient extends Context.Service<JiraClient, JiraClientShape>()(
@@ -95,10 +99,39 @@ const adaptStatus = (raw: any) => {
   };
 };
 
+const adfToText = (node: any): string => {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map(adfToText).join("");
+  if (node.type === "text" && typeof node.text === "string") return node.text;
+  if (node.type === "hardBreak") return "\n";
+  const inner = Array.isArray(node.content) ? node.content.map(adfToText).join("") : "";
+  if (
+    node.type === "paragraph" ||
+    node.type === "heading" ||
+    node.type === "listItem" ||
+    node.type === "blockquote"
+  ) {
+    return `${inner}\n`;
+  }
+  return inner;
+};
+
+const adaptDescription = (raw: unknown): string | undefined => {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw === "string") return raw.length > 0 ? raw : undefined;
+  if (typeof raw === "object") {
+    const text = adfToText(raw).trim();
+    return text.length > 0 ? text : undefined;
+  }
+  return undefined;
+};
+
 const adaptIssue = (baseUrl: string, raw: any): JiraIssue | null => {
   if (!raw || typeof raw.key !== "string") return null;
   const fields = raw.fields ?? {};
   const status = adaptStatus(fields.status);
+  const description = adaptDescription(fields.description);
   return {
     key: JiraIssueKeySchema.make(raw.key),
     summary: typeof fields.summary === "string" ? fields.summary : "",
@@ -111,6 +144,7 @@ const adaptIssue = (baseUrl: string, raw: any): JiraIssue | null => {
       : {}),
     url: issueBrowseUrl(baseUrl, raw.key),
     ...(typeof fields.updated === "string" ? { updated: fields.updated } : {}),
+    ...(description !== undefined ? { description } : {}),
   };
 };
 
@@ -265,12 +299,9 @@ export const makeJiraClient = Effect.gen(function* () {
       } else {
         params.set("maxResults", "20");
       }
-      if (input.startAt !== undefined) {
-        params.set("startAt", String(input.startAt));
-      }
       const { request, baseUrl } = yield* buildRequest(
         "GET",
-        `/rest/api/3/search?${params.toString()}`,
+        `/rest/api/3/search/jql?${params.toString()}`,
       );
       return yield* executeJson(request, "search", (raw): JiraSearchPage => {
         const issues: JiraIssue[] = [];
@@ -292,7 +323,7 @@ export const makeJiraClient = Effect.gen(function* () {
     Effect.gen(function* () {
       const { request, baseUrl } = yield* buildRequest(
         "GET",
-        `/rest/api/3/issue/${issueKey}?fields=summary,status,assignee,reporter,updated`,
+        `/rest/api/3/issue/${issueKey}?fields=summary,status,assignee,reporter,updated,description`,
       );
       return yield* executeJson(request, `issue ${issueKey}`, (raw): JiraIssue => {
         const adapted = adaptIssue(baseUrl, raw);
@@ -424,6 +455,38 @@ export const makeJiraClient = Effect.gen(function* () {
       );
     });
 
+  const listComments: JiraClientShape["listComments"] = ({ issueKey, maxResults }) =>
+    Effect.gen(function* () {
+      const params = new URLSearchParams();
+      params.set("orderBy", "-created");
+      params.set("maxResults", String(maxResults ?? 10));
+      const { request } = yield* buildRequest(
+        "GET",
+        `/rest/api/3/issue/${issueKey}/comment?${params.toString()}`,
+      );
+      return yield* executeJson(
+        request,
+        `comments ${issueKey}`,
+        (raw): ReadonlyArray<JiraComment> => {
+          const list: JiraComment[] = [];
+          if (Array.isArray(raw?.comments)) {
+            for (const entry of raw.comments) {
+              if (typeof entry?.id !== "string") continue;
+              const body = adaptDescription(entry.body) ?? "";
+              const author = adaptUser(entry.author);
+              list.push({
+                id: entry.id,
+                body,
+                ...(author ? { author } : {}),
+                ...(typeof entry.created === "string" ? { created: entry.created } : {}),
+              });
+            }
+          }
+          return list;
+        },
+      );
+    });
+
   return {
     currentUser,
     search,
@@ -432,6 +495,7 @@ export const makeJiraClient = Effect.gen(function* () {
     listTransitions,
     transitionIssue,
     addComment,
+    listComments,
   } satisfies JiraClientShape;
 });
 

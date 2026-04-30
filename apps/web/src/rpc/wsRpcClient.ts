@@ -136,10 +136,35 @@ export interface WsRpcClient {
     readonly listTransitions: RpcUnaryMethod<typeof WS_METHODS.jiraListTransitions>;
     readonly transitionIssue: RpcUnaryMethod<typeof WS_METHODS.jiraTransitionIssue>;
     readonly addComment: RpcUnaryMethod<typeof WS_METHODS.jiraAddComment>;
+    readonly listComments: RpcUnaryMethod<typeof WS_METHODS.jiraListComments>;
     readonly linkThread: RpcUnaryMethod<typeof WS_METHODS.jiraLinkThread>;
     readonly unlinkThread: RpcUnaryMethod<typeof WS_METHODS.jiraUnlinkThread>;
     readonly getThreadLink: RpcUnaryMethod<typeof WS_METHODS.jiraGetThreadLink>;
     readonly subscribeThreadLinks: RpcStreamMethod<typeof WS_METHODS.subscribeJiraThreadLinks>;
+  };
+  readonly ado: {
+    readonly getCredentials: RpcUnaryNoArgMethod<typeof WS_METHODS.adoGetCredentials>;
+    readonly setCredentials: RpcUnaryMethod<typeof WS_METHODS.adoSetCredentials>;
+    readonly clearCredentials: RpcUnaryNoArgMethod<typeof WS_METHODS.adoClearCredentials>;
+    readonly listProjects: RpcUnaryNoArgMethod<typeof WS_METHODS.adoListProjects>;
+    readonly setWatchedProjects: RpcUnaryMethod<typeof WS_METHODS.adoSetWatchedProjects>;
+    readonly searchPullRequests: RpcUnaryMethod<typeof WS_METHODS.adoSearchPullRequests>;
+    readonly getPullRequest: RpcUnaryMethod<typeof WS_METHODS.adoGetPullRequest>;
+    readonly addPullRequestComment: RpcUnaryMethod<typeof WS_METHODS.adoAddPullRequestComment>;
+    readonly listPullRequestComments: RpcUnaryMethod<
+      typeof WS_METHODS.adoListPullRequestComments
+    >;
+    readonly linkPrThread: RpcUnaryMethod<typeof WS_METHODS.adoLinkPrThread>;
+    readonly unlinkPrThread: RpcUnaryMethod<typeof WS_METHODS.adoUnlinkPrThread>;
+    readonly getPrThreadLink: RpcUnaryMethod<typeof WS_METHODS.adoGetPrThreadLink>;
+    readonly getBuildTimeline: RpcUnaryMethod<typeof WS_METHODS.adoGetBuildTimeline>;
+    readonly subscribePrThreadLinks: RpcStreamMethod<
+      typeof WS_METHODS.subscribeAdoPrThreadLinks
+    >;
+    readonly subscribeActiveBuilds: RpcInputStreamMethod<
+      typeof WS_METHODS.subscribeAdoActiveBuilds
+    >;
+    readonly subscribeBuildLog: RpcInputStreamMethod<typeof WS_METHODS.subscribeAdoBuildLog>;
   };
 }
 
@@ -292,6 +317,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[WS_METHODS.jiraTransitionIssue](input)),
       addComment: (input) =>
         transport.request((client) => client[WS_METHODS.jiraAddComment](input)),
+      listComments: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraListComments](input)),
       linkThread: (input) =>
         transport.request((client) => client[WS_METHODS.jiraLinkThread](input)),
       unlinkThread: (input) =>
@@ -301,6 +328,52 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       subscribeThreadLinks: (listener, options) =>
         transport.subscribe(
           (client) => client[WS_METHODS.subscribeJiraThreadLinks]({}),
+          listener,
+          options,
+        ),
+    },
+    ado: {
+      getCredentials: () =>
+        transport.request((client) => client[WS_METHODS.adoGetCredentials]({})),
+      setCredentials: (input) =>
+        transport.request((client) => client[WS_METHODS.adoSetCredentials](input)),
+      clearCredentials: () =>
+        transport.request((client) => client[WS_METHODS.adoClearCredentials]({})),
+      listProjects: () =>
+        transport.request((client) => client[WS_METHODS.adoListProjects]({})),
+      setWatchedProjects: (input) =>
+        transport.request((client) => client[WS_METHODS.adoSetWatchedProjects](input)),
+      searchPullRequests: (input) =>
+        transport.request((client) => client[WS_METHODS.adoSearchPullRequests](input)),
+      getPullRequest: (input) =>
+        transport.request((client) => client[WS_METHODS.adoGetPullRequest](input)),
+      addPullRequestComment: (input) =>
+        transport.request((client) => client[WS_METHODS.adoAddPullRequestComment](input)),
+      listPullRequestComments: (input) =>
+        transport.request((client) => client[WS_METHODS.adoListPullRequestComments](input)),
+      linkPrThread: (input) =>
+        transport.request((client) => client[WS_METHODS.adoLinkPrThread](input)),
+      unlinkPrThread: (input) =>
+        transport.request((client) => client[WS_METHODS.adoUnlinkPrThread](input)),
+      getPrThreadLink: (input) =>
+        transport.request((client) => client[WS_METHODS.adoGetPrThreadLink](input)),
+      getBuildTimeline: (input) =>
+        transport.request((client) => client[WS_METHODS.adoGetBuildTimeline](input)),
+      subscribePrThreadLinks: (listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.subscribeAdoPrThreadLinks]({}),
+          listener,
+          options,
+        ),
+      subscribeActiveBuilds: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.subscribeAdoActiveBuilds](input),
+          listener,
+          options,
+        ),
+      subscribeBuildLog: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.subscribeAdoBuildLog](input),
           listener,
           options,
         ),

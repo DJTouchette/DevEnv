@@ -3,13 +3,7 @@
 import type { JiraIssueKey, JiraTransition, ThreadId } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useState, type KeyboardEvent } from "react";
 
-import {
-  Dialog,
-  DialogBackdrop,
-  DialogPopup,
-  DialogTitle,
-  DialogViewport,
-} from "~/components/ui/dialog";
+import { Dialog, DialogPopup, DialogTitle } from "~/components/ui/dialog";
 import { Spinner } from "~/components/ui/spinner";
 import { anchoredToastManager } from "~/components/ui/toast";
 import { getPrimaryEnvironmentConnection } from "~/environments/runtime";
@@ -114,60 +108,53 @@ export const JiraTransitionPicker = memo(function JiraTransitionPicker() {
         if (!next) close();
       }}
     >
-      <DialogBackdrop />
-      <DialogViewport>
-        <DialogPopup className="max-w-md">
-          <div
-            className="flex flex-col gap-3 p-6"
-            onKeyDown={handleKeyDown}
-            tabIndex={-1}
-          >
-            <DialogTitle>
-              Transition <span className="font-mono">{issueKey}</span>
-            </DialogTitle>
-            {loading ? (
-              <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                <Spinner /> Loading transitions…
-              </div>
-            ) : null}
-            {error ? <p className="text-destructive text-sm">{error}</p> : null}
-            {!loading && !error && transitions.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No transitions available.</p>
-            ) : null}
-            <ul className="flex flex-col gap-1">
-              {transitions.map((transition, index) => {
-                const active = index === activeIndex;
-                const submitting = submittingId === transition.id;
-                return (
-                  <li key={transition.id}>
-                    <button
-                      type="button"
-                      onClick={() => apply(transition)}
-                      disabled={submittingId !== null}
-                      className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                        active
-                          ? "border-foreground bg-muted"
-                          : "border-transparent hover:border-border hover:bg-muted/60"
-                      }`}
-                    >
-                      <span>{transition.name}</span>
-                      <div className="flex items-center gap-2">
-                        {transition.toStatus?.name ? (
-                          <span className="rounded-full border px-2 py-0.5 text-muted-foreground text-xs">
-                            {transition.toStatus.name}
-                          </span>
-                        ) : null}
-                        {submitting ? <Spinner /> : null}
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="text-muted-foreground text-xs">↑/↓ to navigate · Enter to apply</p>
-          </div>
-        </DialogPopup>
-      </DialogViewport>
+      <DialogPopup className="max-w-md">
+        <div className="flex flex-col gap-3 p-6" onKeyDown={handleKeyDown} tabIndex={-1}>
+          <DialogTitle>
+            Transition <span className="font-mono">{issueKey}</span>
+          </DialogTitle>
+          {loading ? (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Spinner /> Loading transitions…
+            </div>
+          ) : null}
+          {error ? <p className="text-destructive text-sm">{error}</p> : null}
+          {!loading && !error && transitions.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No transitions available.</p>
+          ) : null}
+          <ul className="flex flex-col gap-1">
+            {transitions.map((transition, index) => {
+              const active = index === activeIndex;
+              const submitting = submittingId === transition.id;
+              return (
+                <li key={transition.id}>
+                  <button
+                    type="button"
+                    onClick={() => apply(transition)}
+                    disabled={submittingId !== null}
+                    className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      active
+                        ? "border-foreground bg-muted"
+                        : "border-transparent hover:border-border hover:bg-muted/60"
+                    }`}
+                  >
+                    <span>{transition.name}</span>
+                    <div className="flex items-center gap-2">
+                      {transition.toStatus?.name ? (
+                        <span className="rounded-full border px-2 py-0.5 text-muted-foreground text-xs">
+                          {transition.toStatus.name}
+                        </span>
+                      ) : null}
+                      {submitting ? <Spinner /> : null}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-muted-foreground text-xs">↑/↓ to navigate · Enter to apply</p>
+        </div>
+      </DialogPopup>
     </Dialog>
   );
 });

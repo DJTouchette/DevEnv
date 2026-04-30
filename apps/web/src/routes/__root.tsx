@@ -15,12 +15,21 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { JiraCommentDialog } from "../components/jira/JiraCommentDialog";
 import { JiraCreateDialog } from "../components/jira/JiraCreateDialog";
+import { JiraIssueDetailsDialog } from "../components/jira/JiraIssueDetailsDialog";
 import { JiraPicker } from "../components/jira/JiraPicker";
 import { JiraTransitionPicker } from "../components/jira/JiraTransitionPicker";
+import { AdoCommentDialog } from "../components/azureDevOps/AdoCommentDialog";
+import { AdoPicker } from "../components/azureDevOps/AdoPicker";
+import { AdoPipelinesPanel } from "../components/azureDevOps/AdoPipelinesPanel";
+import { AdoPullRequestDetailsDialog } from "../components/azureDevOps/AdoPullRequestDetailsDialog";
 import {
   startJiraThreadLinksSubscription,
   stopJiraThreadLinksSubscription,
 } from "../jiraThreadLinksState";
+import {
+  startAdoThreadLinksSubscription,
+  stopAdoThreadLinksSubscription,
+} from "../adoThreadLinksState";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -121,7 +130,13 @@ function RootRouteView() {
           <JiraTransitionPicker />
           <JiraCommentDialog />
           <JiraCreateDialog />
+          <JiraIssueDetailsDialog />
           <JiraThreadLinksBootstrap />
+          <AdoPicker />
+          <AdoCommentDialog />
+          <AdoPullRequestDetailsDialog />
+          <AdoPipelinesPanel />
+          <AdoThreadLinksBootstrap />
         </WebSocketConnectionSurface>
       </AnchoredToastProvider>
     </ToastProvider>
@@ -133,6 +148,16 @@ function JiraThreadLinksBootstrap() {
     startJiraThreadLinksSubscription();
     return () => {
       stopJiraThreadLinksSubscription();
+    };
+  }, []);
+  return null;
+}
+
+function AdoThreadLinksBootstrap() {
+  useEffect(() => {
+    startAdoThreadLinksSubscription();
+    return () => {
+      stopAdoThreadLinksSubscription();
     };
   }, []);
   return null;

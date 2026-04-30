@@ -6,16 +6,20 @@ import { memo, useCallback } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Badge } from "~/components/ui/badge";
-import { useLinkedJiraIssue } from "~/jiraThreadLinksState";
-import { openJiraDetails } from "~/jiraDetailsDialogState";
+import { useLinkedAdoPullRequest } from "~/adoThreadLinksState";
+import { openAdoDetails } from "~/adoDetailsDialogState";
 
-export const JiraLinkedIssueBadge = memo(function JiraLinkedIssueBadge(props: {
+export const AdoLinkedPrBadge = memo(function AdoLinkedPrBadge(props: {
   readonly threadId: ThreadId;
 }) {
-  const link = useLinkedJiraIssue(props.threadId);
+  const link = useLinkedAdoPullRequest(props.threadId);
   const handleClick = useCallback(() => {
     if (!link) return;
-    openJiraDetails(link.issueKey);
+    openAdoDetails({
+      projectId: link.projectId,
+      repositoryId: link.repositoryId,
+      pullRequestId: link.pullRequestId,
+    });
   }, [link]);
 
   if (!link) return null;
@@ -29,12 +33,12 @@ export const JiraLinkedIssueBadge = memo(function JiraLinkedIssueBadge(props: {
             className="shrink-0 cursor-pointer gap-1 font-mono text-[10px]"
             onClick={handleClick}
           >
-            {link.issueKey}
+            !{link.pullRequestId}
             <ExternalLinkIcon className="size-3" />
           </Badge>
         }
       />
-      <TooltipPopup side="bottom">{link.issueKey} details</TooltipPopup>
+      <TooltipPopup side="bottom">{link.title}</TooltipPopup>
     </Tooltip>
   );
 });

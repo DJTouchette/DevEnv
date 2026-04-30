@@ -31,6 +31,9 @@ import { GitStatusBroadcasterLive } from "./git/Layers/GitStatusBroadcaster.ts";
 import { JiraClientLive } from "./jira/Services/JiraClient.ts";
 import { JiraCredentialsLive } from "./jira/Services/JiraCredentials.ts";
 import { JiraThreadLinksLive } from "./jira/Services/JiraThreadLinks.ts";
+import { AzureDevOpsClientLive } from "./azureDevOps/Services/AzureDevOpsClient.ts";
+import { AzureDevOpsCredentialsLive } from "./azureDevOps/Services/AzureDevOpsCredentials.ts";
+import { AzureDevOpsThreadLinksLive } from "./azureDevOps/Services/AzureDevOpsThreadLinks.ts";
 import { TextGenerationLive } from "./git/Layers/TextGenerationLive.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { TerminalManagerLive } from "./terminal/Layers/Manager.ts";
@@ -205,6 +208,12 @@ const JiraLayerLive = Layer.empty.pipe(
   Layer.provideMerge(JiraCredentialsLive),
 );
 
+const AzureDevOpsLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(AzureDevOpsClientLive),
+  Layer.provideMerge(AzureDevOpsThreadLinksLive),
+  Layer.provideMerge(AzureDevOpsCredentialsLive),
+);
+
 const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
@@ -214,6 +223,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(JiraLayerLive),
+  Layer.provideMerge(AzureDevOpsLayerLive),
   Layer.provideMerge(ProviderRegistryLive),
   // The instance registry is the new routing keystone — text generation,
   // adapter lookup, and runtime ingestion all resolve `ProviderInstanceId`

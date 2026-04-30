@@ -71,6 +71,7 @@ export const JiraIssue = Schema.Struct({
   reporter: Schema.optional(Schema.NullOr(JiraUser)),
   url: Schema.String,
   updated: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
 });
 export type JiraIssue = typeof JiraIssue.Type;
 
@@ -183,6 +184,12 @@ export const JiraListTransitionsInput = Schema.Struct({
   issueKey: JiraIssueKey,
 });
 export type JiraListTransitionsInput = typeof JiraListTransitionsInput.Type;
+
+export const JiraListCommentsInput = Schema.Struct({
+  issueKey: JiraIssueKey,
+  maxResults: Schema.optional(Schema.Number),
+});
+export type JiraListCommentsInput = typeof JiraListCommentsInput.Type;
 
 export const JiraSetCredentialsInput = JiraCredentials;
 

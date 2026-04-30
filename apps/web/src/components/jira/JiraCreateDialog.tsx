@@ -3,13 +3,7 @@
 import { type FormEvent, memo, useCallback, useEffect, useState } from "react";
 
 import { Button } from "~/components/ui/button";
-import {
-  Dialog,
-  DialogBackdrop,
-  DialogPopup,
-  DialogTitle,
-  DialogViewport,
-} from "~/components/ui/dialog";
+import { Dialog, DialogPopup, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Spinner } from "~/components/ui/spinner";
 import { Textarea } from "~/components/ui/textarea";
@@ -135,68 +129,65 @@ export const JiraCreateDialog = memo(function JiraCreateDialog() {
         if (!next) close();
       }}
     >
-      <DialogBackdrop />
-      <DialogViewport>
-        <DialogPopup className="max-w-lg">
-          <form className="flex flex-col gap-3 p-6" onSubmit={handleSubmit}>
-            <DialogTitle>Create Jira issue</DialogTitle>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="flex flex-col gap-1 text-sm">
-                <span>Project key</span>
-                <Input
-                  autoFocus={true}
-                  placeholder="PROJ"
-                  value={projectKey}
-                  onChange={(event) => setProjectKey(event.target.value)}
-                  required={true}
-                  disabled={submitting}
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm">
-                <span>Issue type</span>
-                <Input
-                  value={issueType}
-                  placeholder="Task"
-                  onChange={(event) => setIssueType(event.target.value)}
-                  disabled={submitting}
-                />
-              </label>
-            </div>
+      <DialogPopup className="max-w-lg">
+        <form className="flex flex-col gap-3 p-6" onSubmit={handleSubmit}>
+          <DialogTitle>Create Jira issue</DialogTitle>
+          <div className="grid grid-cols-2 gap-2">
             <label className="flex flex-col gap-1 text-sm">
-              <span>Summary</span>
+              <span>Project key</span>
               <Input
-                value={summary}
-                onChange={(event) => setSummary(event.target.value)}
+                autoFocus={true}
+                placeholder="PROJ"
+                value={projectKey}
+                onChange={(event) => setProjectKey(event.target.value)}
                 required={true}
                 disabled={submitting}
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span>Description</span>
-              <Textarea
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                rows={5}
+              <span>Issue type</span>
+              <Input
+                value={issueType}
+                placeholder="Task"
+                onChange={(event) => setIssueType(event.target.value)}
                 disabled={submitting}
               />
             </label>
-            {threadId ? (
-              <p className="text-muted-foreground text-xs">
-                The new issue will be linked to the active thread.
-              </p>
-            ) : null}
-            {error ? <p className="text-destructive text-sm">{error}</p> : null}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={close} disabled={submitting}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {submitting ? <Spinner /> : "Create"}
-              </Button>
-            </div>
-          </form>
-        </DialogPopup>
-      </DialogViewport>
+          </div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>Summary</span>
+            <Input
+              value={summary}
+              onChange={(event) => setSummary(event.target.value)}
+              required={true}
+              disabled={submitting}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span>Description</span>
+            <Textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={5}
+              disabled={submitting}
+            />
+          </label>
+          {threadId ? (
+            <p className="text-muted-foreground text-xs">
+              The new issue will be linked to the active thread.
+            </p>
+          ) : null}
+          {error ? <p className="text-destructive text-sm">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={close} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? <Spinner /> : "Create"}
+            </Button>
+          </div>
+        </form>
+      </DialogPopup>
     </Dialog>
   );
 });

@@ -50,6 +50,10 @@ import { readLocalApi } from "../localApi";
 import { setJiraPickerOpen } from "../jiraPickerOpenState";
 import { setJiraActionDialog } from "../jiraActionDialogState";
 import { useLinkedJiraIssue } from "../jiraThreadLinksState";
+import { setAdoPickerOpen } from "../adoPickerOpenState";
+import { setAdoActionDialog } from "../adoActionDialogState";
+import { useLinkedAdoPullRequest } from "../adoThreadLinksState";
+import { toggleAdoPipelinesPanel } from "../adoPipelinesPanelState";
 import { getPrimaryEnvironmentConnection } from "../environments/runtime";
 import {
   startNewThreadInProjectFromContext,
@@ -334,6 +338,7 @@ function OpenCommandPaletteDialog() {
 
   const activeThreadId = activeThread?.id;
   const linkedJiraIssue = useLinkedJiraIssue(activeThreadId);
+  const linkedAdoPr = useLinkedAdoPullRequest(activeThreadId);
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
@@ -806,6 +811,95 @@ function OpenCommandPaletteDialog() {
       shortcutCommand: "jira.unlinkCurrent",
       run: async () => {
         await getPrimaryEnvironmentConnection().client.jira.unlinkThread({
+          threadId: activeThreadId,
+        });
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:ado:search",
+    searchTerms: ["ado", "azure", "devops", "pull request", "pr", "search"],
+    title: "Azure DevOps: Search pull requests",
+    icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "ado.picker.toggle",
+    run: async () => {
+      setAdoPickerOpen(true);
+    },
+  });
+
+  if (activeThreadId) {
+    actionItems.push({
+      kind: "action",
+      value: "action:ado:link",
+      searchTerms: ["ado", "azure", "devops", "link", "pull request", "thread"],
+      title: "Azure DevOps: Link PR to current thread",
+      icon: <Link2Icon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "ado.linkCurrent",
+      run: async () => {
+        setAdoPickerOpen(true, { kind: "link", threadId: activeThreadId });
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:ado:pipelines",
+    searchTerms: ["ado", "azure", "devops", "pipelines", "builds", "panel"],
+    title: "Azure DevOps: Toggle pipelines panel",
+    icon: <WorkflowIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "ado.pipelines.toggle",
+    run: async () => {
+      toggleAdoPipelinesPanel();
+    },
+  });
+
+  if (activeThreadId && linkedAdoPr) {
+    const linkedPr = linkedAdoPr;
+    actionItems.push({
+      kind: "action",
+      value: "action:ado:open-linked",
+      searchTerms: ["ado", "azure", "devops", "open", "linked", String(linkedPr.pullRequestId)],
+      title: `Azure DevOps: Open !${linkedPr.pullRequestId} in browser`,
+      icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "ado.openLinked",
+      run: async () => {
+        const localApi = readLocalApi();
+        if (localApi) {
+          await localApi.shell.openExternal(linkedPr.url);
+        } else if (typeof window !== "undefined") {
+          window.open(linkedPr.url, "_blank", "noopener,noreferrer");
+        }
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:ado:comment",
+      searchTerms: ["ado", "azure", "devops", "comment", String(linkedPr.pullRequestId)],
+      title: `Azure DevOps: Comment on !${linkedPr.pullRequestId}`,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "ado.comment",
+      run: async () => {
+        setAdoActionDialog({
+          kind: "comment",
+          threadId: activeThreadId,
+          projectId: linkedPr.projectId,
+          repositoryId: linkedPr.repositoryId,
+          pullRequestId: linkedPr.pullRequestId,
+          title: linkedPr.title,
+        });
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:ado:unlink",
+      searchTerms: ["ado", "azure", "devops", "unlink", String(linkedPr.pullRequestId)],
+      title: `Azure DevOps: Unlink !${linkedPr.pullRequestId} from current thread`,
+      icon: <Link2OffIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "ado.unlinkCurrent",
+      run: async () => {
+        await getPrimaryEnvironmentConnection().client.ado.unlinkPrThread({
           threadId: activeThreadId,
         });
       },

@@ -46,6 +46,10 @@ import { readLocalApi } from "../localApi";
 import { setJiraPickerOpen } from "../jiraPickerOpenState";
 import { setJiraActionDialog } from "../jiraActionDialogState";
 import { getLinkedJiraIssue } from "../jiraThreadLinksState";
+import { setAdoPickerOpen } from "../adoPickerOpenState";
+import { setAdoActionDialog } from "../adoActionDialogState";
+import { getLinkedAdoPullRequest } from "../adoThreadLinksState";
+import { toggleAdoPipelinesPanel } from "../adoPipelinesPanelState";
 import { getPrimaryEnvironmentConnection } from "../environments/runtime";
 import { anchoredToastManager } from "./ui/toast";
 
@@ -69,6 +73,30 @@ const openLinkedJiraIssue = async (threadId: ThreadId): Promise<void> => {
   } catch (cause) {
     anchoredToastManager.add({
       title: "Failed to open linked Jira issue",
+      description: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+};
+
+const openLinkedAdoPullRequest = async (threadId: ThreadId): Promise<void> => {
+  try {
+    const link = await getPrimaryEnvironmentConnection().client.ado.getPrThreadLink({ threadId });
+    if (!link) {
+      anchoredToastManager.add({
+        title: "No linked Azure DevOps PR",
+        description: "Press the link hotkey to associate one.",
+      });
+      return;
+    }
+    const localApi = readLocalApi();
+    if (localApi) {
+      await localApi.shell.openExternal(link.url);
+    } else if (typeof window !== "undefined") {
+      window.open(link.url, "_blank", "noopener,noreferrer");
+    }
+  } catch (cause) {
+    anchoredToastManager.add({
+      title: "Failed to open linked Azure DevOps PR",
       description: cause instanceof Error ? cause.message : String(cause),
     });
   }
@@ -2447,6 +2475,81 @@ export default function ChatView(props: ChatViewProps) {
               description: cause instanceof Error ? cause.message : String(cause),
             });
           });
+        return;
+      }
+
+      if (command === "ado.picker.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        setAdoPickerOpen(true);
+        return;
+      }
+
+      if (command === "ado.linkCurrent") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activeThreadId) {
+          setAdoPickerOpen(true, { kind: "link", threadId: activeThreadId });
+        }
+        return;
+      }
+
+      if (command === "ado.openLinked") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activeThreadId) {
+          void openLinkedAdoPullRequest(activeThreadId);
+        }
+        return;
+      }
+
+      if (command === "ado.comment") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!activeThreadId) return;
+        const link = getLinkedAdoPullRequest(activeThreadId);
+        if (!link) {
+          anchoredToastManager.add({
+            title: "No linked Azure DevOps PR",
+            description: "Link a PR first to comment on it.",
+          });
+          return;
+        }
+        setAdoActionDialog({
+          kind: "comment",
+          threadId: activeThreadId,
+          projectId: link.projectId,
+          repositoryId: link.repositoryId,
+          pullRequestId: link.pullRequestId,
+          title: link.title,
+        });
+        return;
+      }
+
+      if (command === "ado.unlinkCurrent") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!activeThreadId) return;
+        const link = getLinkedAdoPullRequest(activeThreadId);
+        if (!link) return;
+        void getPrimaryEnvironmentConnection()
+          .client.ado.unlinkPrThread({ threadId: activeThreadId })
+          .then(() => {
+            anchoredToastManager.add({ title: `Unlinked !${link.pullRequestId}` });
+          })
+          .catch((cause: unknown) => {
+            anchoredToastManager.add({
+              title: "Failed to unlink",
+              description: cause instanceof Error ? cause.message : String(cause),
+            });
+          });
+        return;
+      }
+
+      if (command === "ado.pipelines.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleAdoPipelinesPanel();
         return;
       }
 

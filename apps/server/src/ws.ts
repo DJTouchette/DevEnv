@@ -1,5 +1,11 @@
-import { Cause, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
+import { Cause, Duration, Effect, HashMap, Layer, Option, Queue, Ref, Schedule, Schema, Stream } from "effect";
 import {
+  type AdoActiveBuildsStreamEvent,
+  type AdoBuild,
+  type AdoBuildId,
+  type AdoBuildLogStreamEvent,
+  type AdoPrThreadLinksStreamEvent,
+  type AdoProjectId,
   type AuthAccessStreamEvent,
   AuthSessionId,
   CommandId,
@@ -36,6 +42,9 @@ import { GitStatusBroadcaster } from "./git/Services/GitStatusBroadcaster.ts";
 import { JiraClient } from "./jira/Services/JiraClient.ts";
 import { JiraCredentials } from "./jira/Services/JiraCredentials.ts";
 import { JiraThreadLinks } from "./jira/Services/JiraThreadLinks.ts";
+import { AzureDevOpsClient } from "./azureDevOps/Services/AzureDevOpsClient.ts";
+import { AzureDevOpsCredentials } from "./azureDevOps/Services/AzureDevOpsCredentials.ts";
+import { AzureDevOpsThreadLinks } from "./azureDevOps/Services/AzureDevOpsThreadLinks.ts";
 import { Keybindings } from "./keybindings.ts";
 import { Open, resolveAvailableEditors } from "./open.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
@@ -160,6 +169,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const jiraClient = yield* JiraClient;
       const jiraCredentials = yield* JiraCredentials;
       const jiraThreadLinks = yield* JiraThreadLinks;
+      const adoClient = yield* AzureDevOpsClient;
+      const adoCredentials = yield* AzureDevOpsCredentials;
+      const adoThreadLinks = yield* AzureDevOpsThreadLinks;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
@@ -1099,6 +1111,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             jiraThreadLinks.unlink(input.threadId).pipe(Effect.as({ ok: true as const })),
             { "rpc.aggregate": "jira" },
           ),
+        [WS_METHODS.jiraListComments]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraListComments,
+            jiraClient.listComments({
+              issueKey: input.issueKey,
+              ...(input.maxResults !== undefined ? { maxResults: input.maxResults } : {}),
+            }),
+            { "rpc.aggregate": "jira" },
+          ),
         [WS_METHODS.jiraGetThreadLink]: (input) =>
           observeRpcEffect(
             WS_METHODS.jiraGetThreadLink,
@@ -1150,6 +1171,264 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               Effect.catchTag("JiraStorageError", (cause) => Effect.fail(cause)),
             ),
             { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.adoGetCredentials]: (_input) =>
+          observeRpcEffect(WS_METHODS.adoGetCredentials, adoCredentials.snapshot, {
+            "rpc.aggregate": "ado",
+          }),
+        [WS_METHODS.adoSetCredentials]: (input) =>
+          observeRpcEffect(WS_METHODS.adoSetCredentials, adoCredentials.set(input), {
+            "rpc.aggregate": "ado",
+          }),
+        [WS_METHODS.adoClearCredentials]: (_input) =>
+          observeRpcEffect(WS_METHODS.adoClearCredentials, adoCredentials.clear, {
+            "rpc.aggregate": "ado",
+          }),
+        [WS_METHODS.adoListProjects]: (_input) =>
+          observeRpcEffect(WS_METHODS.adoListProjects, adoClient.listProjects, {
+            "rpc.aggregate": "ado",
+          }),
+        [WS_METHODS.adoSetWatchedProjects]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoSetWatchedProjects,
+            adoCredentials.setWatchedProjects(input.projectIds),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoSearchPullRequests]: (input) =>
+          observeRpcEffect(WS_METHODS.adoSearchPullRequests, adoClient.searchPullRequests(input), {
+            "rpc.aggregate": "ado",
+          }),
+        [WS_METHODS.adoGetPullRequest]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoGetPullRequest,
+            adoClient.getPullRequest({
+              projectId: input.projectId,
+              repositoryId: input.repositoryId,
+              pullRequestId: input.pullRequestId,
+            }),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoAddPullRequestComment]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoAddPullRequestComment,
+            adoClient.addPullRequestComment({
+              projectId: input.projectId,
+              repositoryId: input.repositoryId,
+              pullRequestId: input.pullRequestId,
+              body: input.body,
+            }),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoLinkPrThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoLinkPrThread,
+            Effect.gen(function* () {
+              const pr = yield* adoClient.getPullRequest({
+                projectId: input.projectId,
+                repositoryId: input.repositoryId,
+                pullRequestId: input.pullRequestId,
+              });
+              return yield* adoThreadLinks.link({
+                threadId: input.threadId,
+                projectId: pr.projectId,
+                projectName: pr.projectName,
+                repositoryId: pr.repositoryId,
+                pullRequestId: pr.pullRequestId,
+                title: pr.title,
+                url: pr.url,
+              });
+            }),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoUnlinkPrThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoUnlinkPrThread,
+            adoThreadLinks.unlink(input.threadId).pipe(Effect.as({ ok: true as const })),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoGetPrThreadLink]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoGetPrThreadLink,
+            adoThreadLinks.get(input.threadId).pipe(
+              Effect.map(
+                Option.match({
+                  onNone: () => null,
+                  onSome: (link) => link,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoListPullRequestComments]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoListPullRequestComments,
+            adoClient.listPullRequestComments({
+              projectId: input.projectId,
+              repositoryId: input.repositoryId,
+              pullRequestId: input.pullRequestId,
+            }),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.adoGetBuildTimeline]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoGetBuildTimeline,
+            adoClient.getBuildTimeline({ projectId: input.projectId, buildId: input.buildId }),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.subscribeAdoPrThreadLinks]: (_input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.subscribeAdoPrThreadLinks,
+            Effect.gen(function* () {
+              const initial = yield* adoThreadLinks.list;
+              const liveStream = adoThreadLinks.streamChanges.pipe(
+                Stream.map(
+                  (change) =>
+                    ({
+                      type: "change" as const,
+                      change,
+                    }) satisfies AdoPrThreadLinksStreamEvent,
+                ),
+              );
+              const threadDeletions = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filter(
+                  (event): event is Extract<OrchestrationEvent, { type: "thread.deleted" }> =>
+                    event.type === "thread.deleted",
+                ),
+                Stream.tap((event) =>
+                  adoThreadLinks
+                    .unlink(event.payload.threadId)
+                    .pipe(Effect.ignoreCause({ log: true })),
+                ),
+                Stream.drain,
+              );
+              yield* Effect.forkScoped(Stream.runDrain(threadDeletions));
+              return Stream.concat(
+                Stream.make({
+                  type: "snapshot" as const,
+                  links: initial,
+                } satisfies AdoPrThreadLinksStreamEvent),
+                liveStream,
+              );
+            }).pipe(Effect.catchTag("AdoStorageError", (cause) => Effect.fail(cause))),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.subscribeAdoActiveBuilds]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.subscribeAdoActiveBuilds,
+            Effect.gen(function* () {
+              const requestedProjectIds: ReadonlyArray<AdoProjectId> =
+                input.projectIds && input.projectIds.length > 0 ? input.projectIds : [];
+              let resolvedProjectIds: ReadonlyArray<AdoProjectId> = requestedProjectIds;
+              if (resolvedProjectIds.length === 0) {
+                const snap = yield* adoCredentials.snapshot.pipe(
+                  Effect.catchTag("AdoStorageError", () =>
+                    Effect.succeed({ configured: false } as const),
+                  ),
+                );
+                if (snap.configured && snap.watchedProjectIds) {
+                  resolvedProjectIds = snap.watchedProjectIds;
+                }
+              }
+              const projectIds = resolvedProjectIds;
+              const lastRef = yield* Ref.make<HashMap.HashMap<AdoBuildId, AdoBuild>>(
+                HashMap.empty(),
+              );
+              const tick = Effect.gen(function* () {
+                if (projectIds.length === 0)
+                  return [] as ReadonlyArray<AdoActiveBuildsStreamEvent>;
+                const events: AdoActiveBuildsStreamEvent[] = [];
+                let next = HashMap.empty<AdoBuildId, AdoBuild>();
+                for (const projectId of projectIds) {
+                  const builds = yield* adoClient.listActiveBuilds({ projectId }).pipe(
+                    Effect.catch((cause) =>
+                      Effect.sync(() => {
+                        events.push({
+                          type: "error",
+                          detail: cause instanceof Error ? cause.message : String(cause),
+                        });
+                        return [] as ReadonlyArray<AdoBuild>;
+                      }),
+                    ),
+                  );
+                  for (const build of builds) {
+                    next = HashMap.set(next, build.id, build);
+                  }
+                }
+                const previous = yield* Ref.get(lastRef);
+                for (const [id, build] of HashMap.entries(next)) {
+                  const prev = HashMap.get(previous, id);
+                  if (
+                    Option.isNone(prev) ||
+                    prev.value.status !== build.status ||
+                    prev.value.result !== build.result ||
+                    prev.value.startTime !== build.startTime ||
+                    prev.value.finishTime !== build.finishTime
+                  ) {
+                    events.push({ type: "upsert", build });
+                  }
+                }
+                for (const [id] of HashMap.entries(previous)) {
+                  if (Option.isNone(HashMap.get(next, id))) {
+                    events.push({ type: "removed", buildId: id });
+                  }
+                }
+                yield* Ref.set(lastRef, next);
+                return events;
+              });
+              yield* tick;
+              const initialSnapshot = Array.from(HashMap.values(yield* Ref.get(lastRef)));
+              const polled = Stream.fromEffectSchedule(tick, Schedule.spaced(Duration.seconds(2))).pipe(
+                Stream.flatMap((events) => Stream.fromIterable(events)),
+              );
+              return Stream.concat(
+                Stream.make({
+                  type: "snapshot" as const,
+                  builds: initialSnapshot,
+                } satisfies AdoActiveBuildsStreamEvent),
+                polled,
+              );
+            }),
+            { "rpc.aggregate": "ado" },
+          ),
+        [WS_METHODS.subscribeAdoBuildLog]: (input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.subscribeAdoBuildLog,
+            Effect.gen(function* () {
+              const cursorRef = yield* Ref.make<number>(input.startLine ?? 0);
+              const tick = Effect.gen(function* () {
+                const startLine = yield* Ref.get(cursorRef);
+                const result = yield* adoClient
+                  .getBuildLog({
+                    projectId: input.projectId,
+                    buildId: input.buildId,
+                    logId: input.logId,
+                    startLine,
+                  })
+                  .pipe(
+                    Effect.map((chunk) => ({ kind: "ok" as const, chunk })),
+                    Effect.catch((cause) =>
+                      Effect.succeed({
+                        kind: "err" as const,
+                        detail: cause instanceof Error ? cause.message : String(cause),
+                      }),
+                    ),
+                  );
+                if (result.kind === "err") {
+                  return [
+                    { type: "error", detail: result.detail } as AdoBuildLogStreamEvent,
+                  ];
+                }
+                if (result.chunk.lines.length > 0) {
+                  yield* Ref.set(cursorRef, result.chunk.endLine);
+                  return [{ type: "chunk", chunk: result.chunk } as AdoBuildLogStreamEvent];
+                }
+                return [] as ReadonlyArray<AdoBuildLogStreamEvent>;
+              });
+              return Stream.fromEffectSchedule(tick, Schedule.spaced(Duration.seconds(2))).pipe(
+                Stream.flatMap((events) => Stream.fromIterable(events)),
+              );
+            }),
+            { "rpc.aggregate": "ado" },
           ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           observeRpcStreamEffect(

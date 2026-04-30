@@ -46,6 +46,7 @@ import {
   JiraIssue,
   JiraIssueCreateInput,
   JiraLinkThreadInput,
+  JiraListCommentsInput,
   JiraListTransitionsInput,
   JiraNetworkError,
   JiraNotFoundError,
@@ -61,6 +62,37 @@ import {
   JiraUnlinkThreadInput,
   JiraUser,
 } from "./jira.ts";
+import {
+  AdoActiveBuildsStreamEvent,
+  AdoAddPullRequestCommentInput,
+  AdoAuthError,
+  AdoBuildLogStreamEvent,
+  AdoBuildTimeline,
+  AdoConfigError,
+  AdoCredentialsSnapshot,
+  AdoDecodeError,
+  AdoGetBuildTimelineInput,
+  AdoGetPrThreadLinkInput,
+  AdoGetPullRequestInput,
+  AdoLinkPrThreadInput,
+  AdoListPullRequestCommentsInput,
+  AdoNetworkError,
+  AdoNotFoundError,
+  AdoPrThreadLink,
+  AdoPrThreadLinksStreamEvent,
+  AdoProject,
+  AdoPullRequest,
+  AdoPullRequestComment,
+  AdoRateLimitedError,
+  AdoSearchPullRequestsInput,
+  AdoSearchPullRequestsPage,
+  AdoSetCredentialsInput,
+  AdoSetWatchedProjectsInput,
+  AdoStorageError,
+  AdoSubscribeActiveBuildsInput,
+  AdoSubscribeBuildLogInput,
+  AdoUnlinkPrThreadInput,
+} from "./azureDevOps.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
@@ -161,6 +193,22 @@ export const WS_METHODS = {
   jiraLinkThread: "jira.linkThread",
   jiraUnlinkThread: "jira.unlinkThread",
   jiraGetThreadLink: "jira.getThreadLink",
+  jiraListComments: "jira.listComments",
+
+  // Azure DevOps methods
+  adoGetCredentials: "ado.getCredentials",
+  adoSetCredentials: "ado.setCredentials",
+  adoClearCredentials: "ado.clearCredentials",
+  adoListProjects: "ado.listProjects",
+  adoSetWatchedProjects: "ado.setWatchedProjects",
+  adoSearchPullRequests: "ado.searchPullRequests",
+  adoGetPullRequest: "ado.getPullRequest",
+  adoAddPullRequestComment: "ado.addPullRequestComment",
+  adoLinkPrThread: "ado.linkPrThread",
+  adoUnlinkPrThread: "ado.unlinkPrThread",
+  adoGetPrThreadLink: "ado.getPrThreadLink",
+  adoGetBuildTimeline: "ado.getBuildTimeline",
+  adoListPullRequestComments: "ado.listPullRequestComments",
 
   // Streaming subscriptions
   subscribeGitStatus: "subscribeGitStatus",
@@ -169,6 +217,9 @@ export const WS_METHODS = {
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeJiraThreadLinks: "subscribeJiraThreadLinks",
+  subscribeAdoPrThreadLinks: "subscribeAdoPrThreadLinks",
+  subscribeAdoActiveBuilds: "subscribeAdoActiveBuilds",
+  subscribeAdoBuildLog: "subscribeAdoBuildLog",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -504,10 +555,134 @@ export const WsJiraGetThreadLinkRpc = Rpc.make(WS_METHODS.jiraGetThreadLink, {
   error: JiraStorageError,
 });
 
+export const WsJiraListCommentsRpc = Rpc.make(WS_METHODS.jiraListComments, {
+  payload: JiraListCommentsInput,
+  success: Schema.Array(JiraComment),
+  error: JiraReadError,
+});
+
 export const WsSubscribeJiraThreadLinksRpc = Rpc.make(WS_METHODS.subscribeJiraThreadLinks, {
   payload: Schema.Struct({}),
   success: JiraThreadLinksStreamEvent,
   error: JiraStorageError,
+  stream: true,
+});
+
+const AdoReadError = Schema.Union([
+  AdoConfigError,
+  AdoAuthError,
+  AdoNotFoundError,
+  AdoRateLimitedError,
+  AdoNetworkError,
+  AdoDecodeError,
+]);
+
+const AdoWriteError = Schema.Union([
+  AdoConfigError,
+  AdoAuthError,
+  AdoNotFoundError,
+  AdoRateLimitedError,
+  AdoNetworkError,
+  AdoDecodeError,
+  AdoStorageError,
+]);
+
+export const WsAdoGetCredentialsRpc = Rpc.make(WS_METHODS.adoGetCredentials, {
+  payload: Schema.Struct({}),
+  success: AdoCredentialsSnapshot,
+  error: AdoStorageError,
+});
+
+export const WsAdoSetCredentialsRpc = Rpc.make(WS_METHODS.adoSetCredentials, {
+  payload: AdoSetCredentialsInput,
+  success: AdoCredentialsSnapshot,
+  error: AdoStorageError,
+});
+
+export const WsAdoClearCredentialsRpc = Rpc.make(WS_METHODS.adoClearCredentials, {
+  payload: Schema.Struct({}),
+  success: AdoCredentialsSnapshot,
+  error: AdoStorageError,
+});
+
+export const WsAdoListProjectsRpc = Rpc.make(WS_METHODS.adoListProjects, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(AdoProject),
+  error: AdoReadError,
+});
+
+export const WsAdoSetWatchedProjectsRpc = Rpc.make(WS_METHODS.adoSetWatchedProjects, {
+  payload: AdoSetWatchedProjectsInput,
+  success: AdoCredentialsSnapshot,
+  error: AdoStorageError,
+});
+
+export const WsAdoSearchPullRequestsRpc = Rpc.make(WS_METHODS.adoSearchPullRequests, {
+  payload: AdoSearchPullRequestsInput,
+  success: AdoSearchPullRequestsPage,
+  error: AdoReadError,
+});
+
+export const WsAdoGetPullRequestRpc = Rpc.make(WS_METHODS.adoGetPullRequest, {
+  payload: AdoGetPullRequestInput,
+  success: AdoPullRequest,
+  error: AdoReadError,
+});
+
+export const WsAdoAddPullRequestCommentRpc = Rpc.make(WS_METHODS.adoAddPullRequestComment, {
+  payload: AdoAddPullRequestCommentInput,
+  success: AdoPullRequestComment,
+  error: AdoWriteError,
+});
+
+export const WsAdoLinkPrThreadRpc = Rpc.make(WS_METHODS.adoLinkPrThread, {
+  payload: AdoLinkPrThreadInput,
+  success: AdoPrThreadLink,
+  error: Schema.Union([AdoStorageError, AdoReadError]),
+});
+
+export const WsAdoUnlinkPrThreadRpc = Rpc.make(WS_METHODS.adoUnlinkPrThread, {
+  payload: AdoUnlinkPrThreadInput,
+  success: Schema.Struct({ ok: Schema.Literal(true) }),
+  error: AdoStorageError,
+});
+
+export const WsAdoGetPrThreadLinkRpc = Rpc.make(WS_METHODS.adoGetPrThreadLink, {
+  payload: AdoGetPrThreadLinkInput,
+  success: Schema.NullOr(AdoPrThreadLink),
+  error: AdoStorageError,
+});
+
+export const WsAdoGetBuildTimelineRpc = Rpc.make(WS_METHODS.adoGetBuildTimeline, {
+  payload: AdoGetBuildTimelineInput,
+  success: AdoBuildTimeline,
+  error: AdoReadError,
+});
+
+export const WsAdoListPullRequestCommentsRpc = Rpc.make(WS_METHODS.adoListPullRequestComments, {
+  payload: AdoListPullRequestCommentsInput,
+  success: Schema.Array(AdoPullRequestComment),
+  error: AdoReadError,
+});
+
+export const WsSubscribeAdoPrThreadLinksRpc = Rpc.make(WS_METHODS.subscribeAdoPrThreadLinks, {
+  payload: Schema.Struct({}),
+  success: AdoPrThreadLinksStreamEvent,
+  error: AdoStorageError,
+  stream: true,
+});
+
+export const WsSubscribeAdoActiveBuildsRpc = Rpc.make(WS_METHODS.subscribeAdoActiveBuilds, {
+  payload: AdoSubscribeActiveBuildsInput,
+  success: AdoActiveBuildsStreamEvent,
+  error: AdoReadError,
+  stream: true,
+});
+
+export const WsSubscribeAdoBuildLogRpc = Rpc.make(WS_METHODS.subscribeAdoBuildLog, {
+  payload: AdoSubscribeBuildLogInput,
+  success: AdoBuildLogStreamEvent,
+  error: AdoReadError,
   stream: true,
 });
 
@@ -562,5 +737,22 @@ export const WsRpcGroup = RpcGroup.make(
   WsJiraLinkThreadRpc,
   WsJiraUnlinkThreadRpc,
   WsJiraGetThreadLinkRpc,
+  WsJiraListCommentsRpc,
   WsSubscribeJiraThreadLinksRpc,
+  WsAdoGetCredentialsRpc,
+  WsAdoSetCredentialsRpc,
+  WsAdoClearCredentialsRpc,
+  WsAdoListProjectsRpc,
+  WsAdoSetWatchedProjectsRpc,
+  WsAdoSearchPullRequestsRpc,
+  WsAdoGetPullRequestRpc,
+  WsAdoAddPullRequestCommentRpc,
+  WsAdoLinkPrThreadRpc,
+  WsAdoUnlinkPrThreadRpc,
+  WsAdoGetPrThreadLinkRpc,
+  WsAdoGetBuildTimelineRpc,
+  WsAdoListPullRequestCommentsRpc,
+  WsSubscribeAdoPrThreadLinksRpc,
+  WsSubscribeAdoActiveBuildsRpc,
+  WsSubscribeAdoBuildLogRpc,
 );

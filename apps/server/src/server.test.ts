@@ -67,6 +67,18 @@ import {
 } from "./git/Services/GitStatusBroadcaster.ts";
 import { JiraClient, type JiraClientShape } from "./jira/Services/JiraClient.ts";
 import {
+  AzureDevOpsClient,
+  type AzureDevOpsClientShape,
+} from "./azureDevOps/Services/AzureDevOpsClient.ts";
+import {
+  AzureDevOpsCredentials,
+  type AzureDevOpsCredentialsShape,
+} from "./azureDevOps/Services/AzureDevOpsCredentials.ts";
+import {
+  AzureDevOpsThreadLinks,
+  type AzureDevOpsThreadLinksShape,
+} from "./azureDevOps/Services/AzureDevOpsThreadLinks.ts";
+import {
   JiraCredentials,
   type JiraCredentialsShape,
 } from "./jira/Services/JiraCredentials.ts";
@@ -349,6 +361,9 @@ const buildAppUnderTest = (options?: {
     jiraClient?: Partial<JiraClientShape>;
     jiraCredentials?: Partial<JiraCredentialsShape>;
     jiraThreadLinks?: Partial<JiraThreadLinksShape>;
+    adoClient?: Partial<AzureDevOpsClientShape>;
+    adoCredentials?: Partial<AzureDevOpsCredentialsShape>;
+    adoThreadLinks?: Partial<AzureDevOpsThreadLinksShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -458,6 +473,29 @@ const buildAppUnderTest = (options?: {
           get: () => Effect.succeed(Option.none()),
           unlink: () => Effect.void,
           ...options?.layers?.jiraThreadLinks,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(AzureDevOpsClient)({
+          ...options?.layers?.adoClient,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(AzureDevOpsCredentials)({
+          get: Effect.succeed(Option.none()),
+          getStored: Effect.succeed(Option.none()),
+          snapshot: Effect.succeed({ configured: false }),
+          streamChanges: Stream.empty,
+          ...options?.layers?.adoCredentials,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(AzureDevOpsThreadLinks)({
+          list: Effect.succeed([]),
+          streamChanges: Stream.empty,
+          get: () => Effect.succeed(Option.none()),
+          unlink: () => Effect.void,
+          ...options?.layers?.adoThreadLinks,
         }),
       ),
       Layer.provide(

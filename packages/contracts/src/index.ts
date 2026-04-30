@@ -16,4 +16,5 @@ export * from "./editor.ts";
 export * from "./project.ts";
 export * from "./filesystem.ts";
 export * from "./jira.ts";
+export * from "./azureDevOps.ts";
 export * from "./rpc.ts";

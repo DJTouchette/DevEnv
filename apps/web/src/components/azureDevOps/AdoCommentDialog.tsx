@@ -1,7 +1,13 @@
 "use client";
 
-import type { JiraIssueKey, ThreadId } from "@t3tools/contracts";
-import { type FormEvent, type KeyboardEvent, memo, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  memo,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
 import { Button } from "~/components/ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "~/components/ui/dialog";
@@ -9,20 +15,18 @@ import { Spinner } from "~/components/ui/spinner";
 import { Textarea } from "~/components/ui/textarea";
 import { anchoredToastManager } from "~/components/ui/toast";
 import { getPrimaryEnvironmentConnection } from "~/environments/runtime";
-import { setJiraActionDialog, useJiraActionDialog } from "~/jiraActionDialogState";
+import { setAdoActionDialog, useAdoActionDialog } from "~/adoActionDialogState";
 
 const errorDetail = (cause: unknown): string =>
   cause instanceof Error
     ? cause.message
     : typeof cause === "object" && cause !== null && "detail" in cause
       ? String((cause as { detail: unknown }).detail)
-      : "Jira request failed";
+      : "Azure DevOps request failed";
 
-export const JiraCommentDialog = memo(function JiraCommentDialog() {
-  const dialog = useJiraActionDialog();
+export const AdoCommentDialog = memo(function AdoCommentDialog() {
+  const dialog = useAdoActionDialog();
   const open = dialog?.kind === "comment";
-  const issueKey = open ? (dialog.issueKey as JiraIssueKey) : null;
-  const threadId = open ? (dialog.threadId as ThreadId) : null;
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,10 +39,10 @@ export const JiraCommentDialog = memo(function JiraCommentDialog() {
     }
   }, [open]);
 
-  const close = useCallback(() => setJiraActionDialog(null), []);
+  const close = useCallback(() => setAdoActionDialog(null), []);
 
   const submit = useCallback(async () => {
-    if (!issueKey) return;
+    if (!dialog || dialog.kind !== "comment") return;
     const trimmed = body.trim();
     if (trimmed.length === 0) {
       setError("Comment cannot be empty.");
@@ -47,20 +51,20 @@ export const JiraCommentDialog = memo(function JiraCommentDialog() {
     setError(null);
     setSubmitting(true);
     try {
-      await getPrimaryEnvironmentConnection().client.jira.addComment({
-        issueKey,
+      await getPrimaryEnvironmentConnection().client.ado.addPullRequestComment({
+        projectId: dialog.projectId,
+        repositoryId: dialog.repositoryId,
+        pullRequestId: dialog.pullRequestId,
         body: trimmed,
       });
-      anchoredToastManager.add({
-        title: `Commented on ${issueKey}`,
-      });
+      anchoredToastManager.add({ title: `Commented on !${dialog.pullRequestId}` });
       close();
     } catch (cause) {
       setError(errorDetail(cause));
     } finally {
       setSubmitting(false);
     }
-  }, [body, close, issueKey]);
+  }, [body, close, dialog]);
 
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -80,7 +84,7 @@ export const JiraCommentDialog = memo(function JiraCommentDialog() {
     [submit],
   );
 
-  if (!open || !issueKey || !threadId) return null;
+  if (!open || !dialog || dialog.kind !== "comment") return null;
 
   return (
     <Dialog
@@ -92,7 +96,8 @@ export const JiraCommentDialog = memo(function JiraCommentDialog() {
       <DialogPopup className="max-w-lg">
         <form className="flex flex-col gap-3 p-6" onSubmit={handleSubmit}>
           <DialogTitle>
-            Comment on <span className="font-mono">{issueKey}</span>
+            Comment on <span className="font-mono">!{dialog.pullRequestId}</span>
+            <span className="ml-2 text-muted-foreground text-sm font-normal">{dialog.title}</span>
           </DialogTitle>
           <Textarea
             autoFocus={true}

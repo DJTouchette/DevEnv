@@ -9,6 +9,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { JiraLinkedIssueBadge } from "../jira/JiraLinkedIssueBadge";
+import { AdoLinkedPrBadge } from "../azureDevOps/AdoLinkedPrBadge";
 import { type DraftId } from "~/composerDraftStore";
 import { DiffIcon, TerminalSquareIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
@@ -90,6 +91,7 @@ export const ChatHeader = memo(function ChatHeader({
           </Badge>
         )}
         <JiraLinkedIssueBadge threadId={activeThreadId} />
+        <AdoLinkedPrBadge threadId={activeThreadId} />
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
         {activeProjectScripts && (

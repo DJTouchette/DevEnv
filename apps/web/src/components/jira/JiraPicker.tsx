@@ -17,17 +17,12 @@ import {
   useState,
 } from "react";
 
-import {
-  Dialog,
-  DialogBackdrop,
-  DialogPopup,
-  DialogTitle,
-  DialogViewport,
-} from "~/components/ui/dialog";
+import { Dialog, DialogPopup, DialogTitle } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Spinner } from "~/components/ui/spinner";
 import { setJiraPickerOpen, useJiraPickerMode, useJiraPickerOpen } from "~/jiraPickerOpenState";
+import { openJiraDetails } from "~/jiraDetailsDialogState";
 import { getPrimaryEnvironmentConnection } from "~/environments/runtime";
 import { readLocalApi } from "~/localApi";
 import { anchoredToastManager } from "~/components/ui/toast";
@@ -207,17 +202,18 @@ export const JiraPicker = memo(function JiraPicker() {
   );
 
   const handleResultActivate = useCallback(
-    (issue: JiraIssue, options?: { readonly link?: boolean }) => {
-      if (options?.link && linkActiveTarget) {
-        void linkIssueToThread(issue);
+    (issue: JiraIssue, options?: { readonly browser?: boolean }) => {
+      if (options?.browser) {
+        void openIssueExternal(issue);
+        setJiraPickerOpen(false);
         return;
       }
       if (linkActiveTarget) {
         void linkIssueToThread(issue);
         return;
       }
-      void openIssueExternal(issue);
       setJiraPickerOpen(false);
+      openJiraDetails(issue.key);
     },
     [linkActiveTarget, linkIssueToThread, openIssueExternal],
   );
@@ -235,8 +231,12 @@ export const JiraPicker = memo(function JiraPicker() {
         event.preventDefault();
         const issue = results[activeIndex];
         if (issue) {
-          handleResultActivate(issue, { link: event.shiftKey });
+          handleResultActivate(issue, { browser: event.shiftKey });
         }
+      } else if (event.key.toLowerCase() === "o" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        const issue = results[activeIndex];
+        if (issue) handleResultActivate(issue, { browser: true });
       } else if (event.key.toLowerCase() === "l" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         const issue = results[activeIndex];
@@ -293,152 +293,135 @@ export const JiraPicker = memo(function JiraPicker() {
       }}
     >
       {open ? (
-        <>
-          <DialogBackdrop />
-          <DialogViewport>
-            <DialogPopup className="max-w-xl" showCloseButton={true}>
-              <div className="flex flex-col gap-4 p-6">
-                <DialogTitle>{dialogTitle}</DialogTitle>
-                {stage.kind === "loading" ? (
-                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                    <Spinner /> Loading…
-                  </div>
-                ) : null}
-                {stage.kind === "credentials" ? (
-                  <form className="flex flex-col gap-3" onSubmit={handleCredentialsSubmit}>
-                    <p className="text-muted-foreground text-sm">
-                      Configure access to your Atlassian Cloud instance.
-                    </p>
-                    <div className="flex gap-2 text-sm">
-                      <button
-                        type="button"
-                        className={`rounded-md border px-3 py-1 ${
-                          creds.kind === "basic"
-                            ? "border-foreground bg-foreground text-background"
-                            : "border-border"
-                        }`}
-                        onClick={() =>
-                          setCreds(
-                            creds.kind === "basic"
-                              ? creds
-                              : { kind: "basic", baseUrl: creds.baseUrl, email: "", apiToken: "" },
-                          )
-                        }
-                      >
-                        API token
-                      </button>
-                      <button
-                        type="button"
-                        className={`rounded-md border px-3 py-1 ${
-                          creds.kind === "bearer"
-                            ? "border-foreground bg-foreground text-background"
-                            : "border-border"
-                        }`}
-                        onClick={() =>
-                          setCreds(
-                            creds.kind === "bearer"
-                              ? creds
-                              : { kind: "bearer", baseUrl: creds.baseUrl, apiKey: "" },
-                          )
-                        }
-                      >
-                        API key (Bearer)
-                      </button>
-                    </div>
+        <DialogPopup className="max-w-xl" showCloseButton={true}>
+          <div className="flex flex-col gap-4 p-6">
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            {stage.kind === "loading" ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                <Spinner /> Loading…
+              </div>
+            ) : null}
+            {stage.kind === "credentials" ? (
+              <form className="flex flex-col gap-3" onSubmit={handleCredentialsSubmit}>
+                <p className="text-muted-foreground text-sm">
+                  Configure access to your Atlassian Cloud instance.
+                </p>
+                <div className="flex gap-2 text-sm">
+                  <button
+                    type="button"
+                    className={`rounded-md border px-3 py-1 ${
+                      creds.kind === "basic"
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border"
+                    }`}
+                    onClick={() =>
+                      setCreds(
+                        creds.kind === "basic"
+                          ? creds
+                          : { kind: "basic", baseUrl: creds.baseUrl, email: "", apiToken: "" },
+                      )
+                    }
+                  >
+                    API token
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-md border px-3 py-1 ${
+                      creds.kind === "bearer"
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border"
+                    }`}
+                    onClick={() =>
+                      setCreds(
+                        creds.kind === "bearer"
+                          ? creds
+                          : { kind: "bearer", baseUrl: creds.baseUrl, apiKey: "" },
+                      )
+                    }
+                  >
+                    API key (Bearer)
+                  </button>
+                </div>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span>Site URL</span>
+                  <Input
+                    autoFocus={true}
+                    value={creds.baseUrl}
+                    placeholder="https://your-org.atlassian.net"
+                    onChange={(event) => setCreds({ ...creds, baseUrl: event.target.value })}
+                    required={true}
+                  />
+                </label>
+                {creds.kind === "basic" ? (
+                  <>
                     <label className="flex flex-col gap-1 text-sm">
-                      <span>Site URL</span>
+                      <span>Email</span>
                       <Input
-                        autoFocus={true}
-                        value={creds.baseUrl}
-                        placeholder="https://your-org.atlassian.net"
-                        onChange={(event) =>
-                          setCreds({ ...creds, baseUrl: event.target.value })
-                        }
+                        value={creds.email}
+                        placeholder="you@example.com"
+                        onChange={(event) => setCreds({ ...creds, email: event.target.value })}
                         required={true}
                       />
                     </label>
-                    {creds.kind === "basic" ? (
-                      <>
-                        <label className="flex flex-col gap-1 text-sm">
-                          <span>Email</span>
-                          <Input
-                            value={creds.email}
-                            placeholder="you@example.com"
-                            onChange={(event) =>
-                              setCreds({ ...creds, email: event.target.value })
-                            }
-                            required={true}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1 text-sm">
-                          <span>API token</span>
-                          <Input
-                            type="password"
-                            autoComplete="off"
-                            value={creds.apiToken}
-                            onChange={(event) =>
-                              setCreds({ ...creds, apiToken: event.target.value })
-                            }
-                            required={true}
-                          />
-                        </label>
-                      </>
-                    ) : (
-                      <label className="flex flex-col gap-1 text-sm">
-                        <span>API key (Bearer token)</span>
-                        <Input
-                          type="password"
-                          autoComplete="off"
-                          value={creds.apiKey}
-                          onChange={(event) =>
-                            setCreds({ ...creds, apiKey: event.target.value })
-                          }
-                          required={true}
-                        />
-                      </label>
-                    )}
-                    {credsError ? (
-                      <p className="text-destructive text-sm">{credsError}</p>
-                    ) : null}
-                    <div className="flex justify-end gap-2 pt-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleClose}
-                        disabled={credsSubmitting}
-                      >
-                        Cancel
-                      </Button>
-                      <Button type="submit" disabled={credsSubmitting}>
-                        {credsSubmitting ? <Spinner /> : "Save credentials"}
-                      </Button>
-                    </div>
-                  </form>
-                ) : null}
-                {stage.kind === "search" ? (
-                  <>
-                    <SearchBox
-                      query={query}
-                      onChange={setQuery}
-                      onKeyDown={handleSearchKeyDown}
-                      searching={searching}
-                    />
-                    {searchError ? (
-                      <p className="text-destructive text-sm">{searchError}</p>
-                    ) : null}
-                    <ResultsList
-                      issues={results}
-                      activeIndex={activeIndex}
-                      linkMode={Boolean(linkActiveTarget)}
-                      onActivate={(issue) => handleResultActivate(issue)}
-                    />
-                    <FooterHint linkMode={Boolean(linkActiveTarget)} />
+                    <label className="flex flex-col gap-1 text-sm">
+                      <span>API token</span>
+                      <Input
+                        type="password"
+                        autoComplete="off"
+                        value={creds.apiToken}
+                        onChange={(event) => setCreds({ ...creds, apiToken: event.target.value })}
+                        required={true}
+                      />
+                    </label>
                   </>
-                ) : null}
-              </div>
-            </DialogPopup>
-          </DialogViewport>
-        </>
+                ) : (
+                  <label className="flex flex-col gap-1 text-sm">
+                    <span>API key (Bearer token)</span>
+                    <Input
+                      type="password"
+                      autoComplete="off"
+                      value={creds.apiKey}
+                      onChange={(event) => setCreds({ ...creds, apiKey: event.target.value })}
+                      required={true}
+                    />
+                  </label>
+                )}
+                {credsError ? <p className="text-destructive text-sm">{credsError}</p> : null}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleClose}
+                    disabled={credsSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={credsSubmitting}>
+                    {credsSubmitting ? <Spinner /> : "Save credentials"}
+                  </Button>
+                </div>
+              </form>
+            ) : null}
+            {stage.kind === "search" ? (
+              <>
+                <SearchBox
+                  query={query}
+                  onChange={setQuery}
+                  onKeyDown={handleSearchKeyDown}
+                  searching={searching}
+                />
+                {searchError ? <p className="text-destructive text-sm">{searchError}</p> : null}
+                <ResultsList
+                  issues={results}
+                  activeIndex={activeIndex}
+                  linkMode={Boolean(linkActiveTarget)}
+                  onActivate={(issue) => handleResultActivate(issue)}
+                />
+                <FooterHint linkMode={Boolean(linkActiveTarget)} />
+              </>
+            ) : null}
+          </div>
+        </DialogPopup>
       ) : null}
     </Dialog>
   );
@@ -479,9 +462,7 @@ const ResultsList = memo(function ResultsList(props: {
   readonly onActivate: (issue: JiraIssue) => void;
 }) {
   if (props.issues.length === 0) {
-    return (
-      <p className="text-muted-foreground text-sm">No issues. Try a different query.</p>
-    );
+    return <p className="text-muted-foreground text-sm">No issues. Try a different query.</p>;
   }
   return (
     <ul className="flex flex-col gap-1">
@@ -523,7 +504,7 @@ const FooterHint = memo(function FooterHint(props: { readonly linkMode: boolean 
     <p className="text-muted-foreground text-xs">
       {props.linkMode
         ? "Enter / click links the selected issue to the active thread."
-        : "Enter opens in browser · Shift+Enter (or ⌘L) links to active thread"}
+        : "Enter opens details · Shift+Enter (or ⌘O) opens in browser"}
     </p>
   );
 });
