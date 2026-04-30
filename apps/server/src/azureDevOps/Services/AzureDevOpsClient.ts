@@ -72,6 +72,10 @@ export interface AzureDevOpsClientShape {
   readonly listActiveBuilds: (input: {
     readonly projectId: AdoProjectId;
   }) => Effect.Effect<ReadonlyArray<AdoBuild>, AdoReadError>;
+  readonly listRecentBuilds: (input: {
+    readonly projectId: AdoProjectId;
+    readonly maxResults?: number;
+  }) => Effect.Effect<ReadonlyArray<AdoBuild>, AdoReadError>;
   readonly getBuildTimeline: (input: {
     readonly projectId: AdoProjectId;
     readonly buildId: string;
@@ -608,6 +612,35 @@ export const makeAzureDevOpsClient = Effect.gen(function* () {
       );
     });
 
+  const listRecentBuilds: AzureDevOpsClientShape["listRecentBuilds"] = ({
+    projectId,
+    maxResults,
+  }) =>
+    Effect.gen(function* () {
+      const top = Math.max(1, Math.min(maxResults ?? 25, 200));
+      const params = new URLSearchParams();
+      params.set("statusFilter", "completed");
+      params.set("queryOrder", "finishTimeDescending");
+      params.set("$top", String(top));
+      params.set("api-version", API_VERSION);
+      const segment = `/${encodeURIComponent(projectId)}/_apis/build/builds?${params.toString()}`;
+      const { request, orgUrl } = yield* buildRequest("GET", segment);
+      return yield* executeJson(
+        request,
+        `recent builds (${projectId})`,
+        (raw): ReadonlyArray<AdoBuild> => {
+          const list: AdoBuild[] = [];
+          if (Array.isArray(raw?.value)) {
+            for (const candidate of raw.value) {
+              const adapted = adaptBuild(orgUrl, candidate);
+              if (adapted) list.push(adapted);
+            }
+          }
+          return list;
+        },
+      );
+    });
+
   const getBuildTimeline: AzureDevOpsClientShape["getBuildTimeline"] = ({ projectId, buildId }) =>
     Effect.gen(function* () {
       const segment = `/${encodeURIComponent(projectId)}/_apis/build/builds/${encodeURIComponent(
@@ -665,6 +698,7 @@ export const makeAzureDevOpsClient = Effect.gen(function* () {
     addPullRequestComment,
     listPullRequestComments,
     listActiveBuilds,
+    listRecentBuilds,
     getBuildTimeline,
     getBuildLog,
   } satisfies AzureDevOpsClientShape;

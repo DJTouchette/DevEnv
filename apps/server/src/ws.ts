@@ -1275,6 +1275,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             adoClient.getBuildTimeline({ projectId: input.projectId, buildId: input.buildId }),
             { "rpc.aggregate": "ado" },
           ),
+        [WS_METHODS.adoListRecentBuilds]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.adoListRecentBuilds,
+            adoClient
+              .listRecentBuilds({
+                projectId: input.projectId,
+                ...(typeof input.maxResults === "number" ? { maxResults: input.maxResults } : {}),
+              })
+              .pipe(Effect.map((builds) => ({ builds }))),
+            { "rpc.aggregate": "ado" },
+          ),
         [WS_METHODS.subscribeAdoPrThreadLinks]: (_input) =>
           observeRpcStreamEffect(
             WS_METHODS.subscribeAdoPrThreadLinks,

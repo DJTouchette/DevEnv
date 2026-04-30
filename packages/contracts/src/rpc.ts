@@ -76,6 +76,8 @@ import {
   AdoGetPullRequestInput,
   AdoLinkPrThreadInput,
   AdoListPullRequestCommentsInput,
+  AdoListRecentBuildsInput,
+  AdoListRecentBuildsResult,
   AdoNetworkError,
   AdoNotFoundError,
   AdoPrThreadLink,
@@ -209,6 +211,7 @@ export const WS_METHODS = {
   adoGetPrThreadLink: "ado.getPrThreadLink",
   adoGetBuildTimeline: "ado.getBuildTimeline",
   adoListPullRequestComments: "ado.listPullRequestComments",
+  adoListRecentBuilds: "ado.listRecentBuilds",
 
   // Streaming subscriptions
   subscribeGitStatus: "subscribeGitStatus",
@@ -665,6 +668,12 @@ export const WsAdoListPullRequestCommentsRpc = Rpc.make(WS_METHODS.adoListPullRe
   error: AdoReadError,
 });
 
+export const WsAdoListRecentBuildsRpc = Rpc.make(WS_METHODS.adoListRecentBuilds, {
+  payload: AdoListRecentBuildsInput,
+  success: AdoListRecentBuildsResult,
+  error: AdoReadError,
+});
+
 export const WsSubscribeAdoPrThreadLinksRpc = Rpc.make(WS_METHODS.subscribeAdoPrThreadLinks, {
   payload: Schema.Struct({}),
   success: AdoPrThreadLinksStreamEvent,
@@ -752,6 +761,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsAdoGetPrThreadLinkRpc,
   WsAdoGetBuildTimelineRpc,
   WsAdoListPullRequestCommentsRpc,
+  WsAdoListRecentBuildsRpc,
   WsSubscribeAdoPrThreadLinksRpc,
   WsSubscribeAdoActiveBuildsRpc,
   WsSubscribeAdoBuildLogRpc,

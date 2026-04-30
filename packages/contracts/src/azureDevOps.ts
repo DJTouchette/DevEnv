@@ -217,6 +217,17 @@ export const AdoSubscribeActiveBuildsInput = Schema.Struct({
 });
 export type AdoSubscribeActiveBuildsInput = typeof AdoSubscribeActiveBuildsInput.Type;
 
+export const AdoListRecentBuildsInput = Schema.Struct({
+  projectId: AdoProjectId,
+  maxResults: Schema.optional(Schema.Number),
+});
+export type AdoListRecentBuildsInput = typeof AdoListRecentBuildsInput.Type;
+
+export const AdoListRecentBuildsResult = Schema.Struct({
+  builds: Schema.Array(AdoBuild),
+});
+export type AdoListRecentBuildsResult = typeof AdoListRecentBuildsResult.Type;
+
 export const AdoActiveBuildsStreamEvent = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("snapshot"),
