@@ -1211,16 +1211,26 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (selectedThreadCount > 0) {
         clearSelection();
       }
-      toggleProject(project.projectKey);
+      // Open the project's dashboard. The chevron next to the favicon stays
+      // wired to the expand/collapse toggle so users can keep the thread
+      // list open without leaving the dashboard.
+      void router.navigate({
+        to: "/$environmentId/project/$projectId",
+        params: {
+          environmentId: project.environmentId,
+          projectId: project.id,
+        },
+      });
     },
     [
       clearSelection,
       dragInProgressRef,
-      project.projectKey,
+      project.environmentId,
+      project.id,
+      router,
       selectedThreadCount,
       suppressProjectClickAfterDragRef,
       suppressProjectClickForContextMenuRef,
-      toggleProject,
     ],
   );
 
@@ -1231,9 +1241,34 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (dragInProgressRef.current) {
         return;
       }
+      void router.navigate({
+        to: "/$environmentId/project/$projectId",
+        params: {
+          environmentId: project.environmentId,
+          projectId: project.id,
+        },
+      });
+    },
+    [dragInProgressRef, project.environmentId, project.id, router],
+  );
+
+  const handleProjectChevronClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
       toggleProject(project.projectKey);
     },
-    [dragInProgressRef, project.projectKey, toggleProject],
+    [project.projectKey, toggleProject],
+  );
+
+  const handleProjectChevronKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      toggleProject(project.projectKey);
+    },
+    [project.projectKey, toggleProject],
   );
 
   const handleProjectButtonPointerDownCapture = useCallback(
@@ -1961,9 +1996,15 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         >
           {!projectExpanded && projectStatus ? (
             <span
-              aria-hidden="true"
+              role="button"
+              tabIndex={-1}
+              aria-label={projectExpanded ? "Collapse project" : "Expand project"}
+              aria-expanded={projectExpanded}
               title={projectStatus.label}
-              className={`-ml-0.5 relative inline-flex size-3.5 shrink-0 items-center justify-center ${projectStatus.colorClass}`}
+              onClick={handleProjectChevronClick}
+              onKeyDown={handleProjectChevronKeyDown}
+              onPointerDownCapture={(event) => event.stopPropagation()}
+              className={`-ml-0.5 relative inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center ${projectStatus.colorClass}`}
             >
               <span className="absolute inset-0 flex items-center justify-center transition-opacity duration-150 group-hover/project-header:opacity-0">
                 <span
@@ -1975,11 +2016,22 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               <ChevronRightIcon className="absolute inset-0 m-auto size-3.5 text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-hover/project-header:opacity-100" />
             </span>
           ) : (
-            <ChevronRightIcon
-              className={`-ml-0.5 size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-150 ${
-                projectExpanded ? "rotate-90" : ""
-              }`}
-            />
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label={projectExpanded ? "Collapse project" : "Expand project"}
+              aria-expanded={projectExpanded}
+              onClick={handleProjectChevronClick}
+              onKeyDown={handleProjectChevronKeyDown}
+              onPointerDownCapture={(event) => event.stopPropagation()}
+              className="-ml-0.5 inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center"
+            >
+              <ChevronRightIcon
+                className={`size-3.5 text-muted-foreground/70 transition-transform duration-150 ${
+                  projectExpanded ? "rotate-90" : ""
+                }`}
+              />
+            </span>
           )}
           <ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />
           <span className="flex min-w-0 flex-1 items-center gap-2">

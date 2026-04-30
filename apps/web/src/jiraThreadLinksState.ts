@@ -1,5 +1,6 @@
 import type { JiraThreadLink, JiraThreadLinksStreamEvent, ThreadId } from "@t3tools/contracts";
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 
 import { getPrimaryEnvironmentConnection } from "./environments/runtime";
 
@@ -37,6 +38,22 @@ export function useLinkedJiraIssue(threadId: ThreadId | null | undefined): JiraT
 
 export function getLinkedJiraIssue(threadId: ThreadId): JiraThreadLink | null {
   return useJiraThreadLinksStore.getState().links.get(threadId) ?? null;
+}
+
+// Returns all Jira links whose threadId is in the given set. Recomputed only
+// when the underlying links map changes; the threadIds set is captured by
+// reference so callers should memoize it (e.g. via useMemo over a stable list).
+export function useLinkedJiraIssuesForThreads(threadIds: ReadonlySet<ThreadId>): JiraThreadLink[] {
+  return useJiraThreadLinksStore(
+    useShallow((store) => {
+      const result: JiraThreadLink[] = [];
+      for (const id of threadIds) {
+        const link = store.links.get(id);
+        if (link) result.push(link);
+      }
+      return result;
+    }),
+  );
 }
 
 let unsubscribe: (() => void) | null = null;
