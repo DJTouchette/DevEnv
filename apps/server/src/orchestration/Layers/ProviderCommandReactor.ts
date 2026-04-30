@@ -23,6 +23,10 @@ import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../git/Services/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { JiraThreadLinks } from "../../jira/Services/JiraThreadLinks.ts";
+import { JiraClient } from "../../jira/Services/JiraClient.ts";
+import { AzureDevOpsThreadLinks } from "../../azureDevOps/Services/AzureDevOpsThreadLinks.ts";
+import { AzureDevOpsClient } from "../../azureDevOps/Services/AzureDevOpsClient.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ProviderCommandReactor,
@@ -172,6 +176,10 @@ const make = Effect.gen(function* () {
   const gitStatusBroadcaster = yield* GitStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const jiraThreadLinks = yield* JiraThreadLinks;
+  const jiraClient = yield* JiraClient;
+  const adoThreadLinks = yield* AzureDevOpsThreadLinks;
+  const adoClient = yield* AzureDevOpsClient;
   const handledTurnStartKeys = yield* Cache.make<string, true>({
     capacity: HANDLED_TURN_START_KEY_MAX,
     timeToLive: HANDLED_TURN_START_KEY_TTL,
@@ -186,6 +194,7 @@ const make = Effect.gen(function* () {
     );
 
   const threadModelSelections = new Map<string, ModelSelection>();
+  const lastInjectedLinkedFingerprint = new Map<string, string>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -492,6 +501,93 @@ const make = Effect.gen(function* () {
     return startedSession.threadId;
   });
 
+  const truncate = (value: string, max: number): string => {
+    const trimmed = value.trim();
+    if (trimmed.length <= max) return trimmed;
+    return `${trimmed.slice(0, max).trimEnd()}…`;
+  };
+
+  const buildLinkedItemsContextBlock = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const sections: string[] = [];
+      const fingerprintParts: string[] = [];
+      const jiraLink = yield* jiraThreadLinks
+        .get(threadId)
+        .pipe(Effect.catch(() => Effect.succeed(Option.none())));
+      if (Option.isSome(jiraLink)) {
+        const link = jiraLink.value;
+        const browseUrl = `${link.baseUrl.replace(/\/+$/, "")}/browse/${link.issueKey}`;
+        fingerprintParts.push(`jira:${link.issueKey}`);
+        const issue = yield* jiraClient
+          .getIssue({ issueKey: link.issueKey })
+          .pipe(Effect.option);
+        if (Option.isSome(issue)) {
+          const detail = issue.value;
+          const fields: string[] = [];
+          if (detail.status?.name) fields.push(`status: ${detail.status.name}`);
+          if (detail.assignee?.displayName) fields.push(`assignee: ${detail.assignee.displayName}`);
+          if (detail.reporter?.displayName) fields.push(`reporter: ${detail.reporter.displayName}`);
+          const meta = fields.length > 0 ? ` (${fields.join(", ")})` : "";
+          const summary = detail.summary?.trim() ?? "";
+          const summaryFragment = summary.length > 0 ? ` — "${summary}"` : "";
+          let block = `## Jira ${link.issueKey}${summaryFragment}${meta}\n${browseUrl}`;
+          if (detail.description && detail.description.length > 0) {
+            block += `\n\nDescription:\n${truncate(detail.description, 1200)}`;
+          }
+          sections.push(block);
+        } else {
+          sections.push(`## Jira ${link.issueKey}\n${browseUrl}`);
+        }
+      }
+      const adoLink = yield* adoThreadLinks
+        .get(threadId)
+        .pipe(Effect.catch(() => Effect.succeed(Option.none())));
+      if (Option.isSome(adoLink)) {
+        const link = adoLink.value;
+        fingerprintParts.push(`ado:${link.projectId}/${link.repositoryId}/${link.pullRequestId}`);
+        const pr = yield* adoClient
+          .getPullRequest({
+            projectId: link.projectId,
+            repositoryId: link.repositoryId,
+            pullRequestId: link.pullRequestId,
+          })
+          .pipe(Effect.option);
+        const title = Option.isSome(pr) ? pr.value.title : link.title;
+        const fields: string[] = [];
+        if (Option.isSome(pr)) {
+          const detail = pr.value;
+          fields.push(`status: ${detail.status}`);
+          if (detail.isDraft) fields.push("draft");
+          if (detail.createdBy?.displayName) fields.push(`author: ${detail.createdBy.displayName}`);
+          if (detail.sourceRefName && detail.targetRefName) {
+            const source = detail.sourceRefName.replace(/^refs\/heads\//, "");
+            const target = detail.targetRefName.replace(/^refs\/heads\//, "");
+            fields.push(`branches: ${source} → ${target}`);
+          }
+        }
+        const meta = fields.length > 0 ? ` (${fields.join(", ")})` : "";
+        let block = `## Azure DevOps PR !${link.pullRequestId} — "${title}" in ${link.projectName}${meta}\n${link.url}`;
+        if (Option.isSome(pr)) {
+          const description = pr.value.description?.trim() ?? "";
+          if (description.length > 0) {
+            block += `\n\nDescription:\n${truncate(description, 1200)}`;
+          }
+        }
+        sections.push(block);
+      }
+      const fingerprint = fingerprintParts.join("|");
+      if (fingerprint.length === 0) {
+        lastInjectedLinkedFingerprint.delete(threadId);
+        return "";
+      }
+      const previous = lastInjectedLinkedFingerprint.get(threadId);
+      if (previous === fingerprint) return "";
+      lastInjectedLinkedFingerprint.set(threadId, fingerprint);
+      return `<linked-context>\nThis chat thread is associated with the following external item(s). Use them as context for the conversation.\n\n${sections.join(
+        "\n\n",
+      )}\n</linked-context>\n\n`;
+    });
+
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly messageText: string;
@@ -514,7 +610,15 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const linkedContextBlock =
+      input.messageText.trim().length > 0
+        ? yield* buildLinkedItemsContextBlock(input.threadId)
+        : "";
+    const messageWithContext =
+      linkedContextBlock.length > 0
+        ? `${linkedContextBlock}${input.messageText}`
+        : input.messageText;
+    const normalizedInput = toNonEmptyProviderInput(messageWithContext);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()

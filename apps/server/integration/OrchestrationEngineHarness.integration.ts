@@ -51,6 +51,10 @@ import { ProviderService } from "../src/provider/Services/ProviderService.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { CheckpointReactorLive } from "../src/orchestration/Layers/CheckpointReactor.ts";
 import { RepositoryIdentityResolverLive } from "../src/project/Layers/RepositoryIdentityResolver.ts";
+import { JiraThreadLinks } from "../src/jira/Services/JiraThreadLinks.ts";
+import { JiraClient } from "../src/jira/Services/JiraClient.ts";
+import { AzureDevOpsThreadLinks } from "../src/azureDevOps/Services/AzureDevOpsThreadLinks.ts";
+import { AzureDevOpsClient } from "../src/azureDevOps/Services/AzureDevOpsClient.ts";
 import { OrchestrationEngineLive } from "../src/orchestration/Layers/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "../src/orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "../src/orchestration/Layers/ProjectionSnapshotQuery.ts";
@@ -365,6 +369,26 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolverLive),
       Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        Layer.mock(JiraThreadLinks)({
+          list: Effect.succeed([]),
+          streamChanges: Stream.empty,
+          get: () => Effect.succeed(Option.none()),
+          unlink: () => Effect.void,
+          link: () => Effect.die("JiraThreadLinks.link not stubbed in this test"),
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.mock(AzureDevOpsThreadLinks)({
+          list: Effect.succeed([]),
+          streamChanges: Stream.empty,
+          get: () => Effect.succeed(Option.none()),
+          unlink: () => Effect.void,
+          link: () => Effect.die("AzureDevOpsThreadLinks.link not stubbed in this test"),
+        }),
+      ),
+      Layer.provideMerge(Layer.mock(JiraClient)({})),
+      Layer.provideMerge(Layer.mock(AzureDevOpsClient)({})),
       Layer.provideMerge(ServerConfig.layerTest(workspaceDir, rootDir)),
       Layer.provideMerge(NodeServices.layer),
     );

@@ -20,7 +20,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { Effect, Exit, Layer, ManagedRuntime, PubSub, Scope, Stream } from "effect";
+import { Effect, Exit, Layer, ManagedRuntime, Option, PubSub, Scope, Stream } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
@@ -52,6 +52,10 @@ import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { JiraThreadLinks } from "../../jira/Services/JiraThreadLinks.ts";
+import { JiraClient } from "../../jira/Services/JiraClient.ts";
+import { AzureDevOpsThreadLinks } from "../../azureDevOps/Services/AzureDevOpsThreadLinks.ts";
+import { AzureDevOpsClient } from "../../azureDevOps/Services/AzureDevOpsClient.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -341,6 +345,26 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        Layer.mock(JiraThreadLinks)({
+          list: Effect.succeed([]),
+          streamChanges: Stream.empty,
+          get: () => Effect.succeed(Option.none()),
+          unlink: () => Effect.void,
+          link: () => Effect.die("JiraThreadLinks.link not stubbed in this test"),
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.mock(AzureDevOpsThreadLinks)({
+          list: Effect.succeed([]),
+          streamChanges: Stream.empty,
+          get: () => Effect.succeed(Option.none()),
+          unlink: () => Effect.void,
+          link: () => Effect.die("AzureDevOpsThreadLinks.link not stubbed in this test"),
+        }),
+      ),
+      Layer.provideMerge(Layer.mock(JiraClient)({})),
+      Layer.provideMerge(Layer.mock(AzureDevOpsClient)({})),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
