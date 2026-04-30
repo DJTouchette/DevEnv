@@ -44,6 +44,8 @@ import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { setJiraPickerOpen } from "../jiraPickerOpenState";
+import { setJiraActionDialog } from "../jiraActionDialogState";
+import { getLinkedJiraIssue } from "../jiraThreadLinksState";
 import { getPrimaryEnvironmentConnection } from "../environments/runtime";
 import { anchoredToastManager } from "./ui/toast";
 
@@ -2373,6 +2375,78 @@ export default function ChatView(props: ChatViewProps) {
         if (activeThreadId) {
           void openLinkedJiraIssue(activeThreadId);
         }
+        return;
+      }
+
+      if (command === "jira.transition") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!activeThreadId) return;
+        const link = getLinkedJiraIssue(activeThreadId);
+        if (!link) {
+          anchoredToastManager.add({
+            title: "No linked Jira issue",
+            description: "Link an issue first to change its status.",
+          });
+          return;
+        }
+        setJiraActionDialog({
+          kind: "transition",
+          threadId: activeThreadId,
+          issueKey: link.issueKey,
+        });
+        return;
+      }
+
+      if (command === "jira.comment") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!activeThreadId) return;
+        const link = getLinkedJiraIssue(activeThreadId);
+        if (!link) {
+          anchoredToastManager.add({
+            title: "No linked Jira issue",
+            description: "Link an issue first to comment on it.",
+          });
+          return;
+        }
+        setJiraActionDialog({
+          kind: "comment",
+          threadId: activeThreadId,
+          issueKey: link.issueKey,
+        });
+        return;
+      }
+
+      if (command === "jira.create") {
+        event.preventDefault();
+        event.stopPropagation();
+        setJiraActionDialog({
+          kind: "create",
+          threadId: activeThreadId ?? null,
+        });
+        return;
+      }
+
+      if (command === "jira.unlinkCurrent") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!activeThreadId) return;
+        const link = getLinkedJiraIssue(activeThreadId);
+        if (!link) return;
+        void getPrimaryEnvironmentConnection()
+          .client.jira.unlinkThread({ threadId: activeThreadId })
+          .then(() => {
+            anchoredToastManager.add({
+              title: `Unlinked ${link.issueKey}`,
+            });
+          })
+          .catch((cause: unknown) => {
+            anchoredToastManager.add({
+              title: "Failed to unlink",
+              description: cause instanceof Error ? cause.message : String(cause),
+            });
+          });
         return;
       }
 

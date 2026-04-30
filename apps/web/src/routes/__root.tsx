@@ -13,7 +13,14 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { JiraCommentDialog } from "../components/jira/JiraCommentDialog";
+import { JiraCreateDialog } from "../components/jira/JiraCreateDialog";
 import { JiraPicker } from "../components/jira/JiraPicker";
+import { JiraTransitionPicker } from "../components/jira/JiraTransitionPicker";
+import {
+  startJiraThreadLinksSubscription,
+  stopJiraThreadLinksSubscription,
+} from "../jiraThreadLinksState";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -111,10 +118,24 @@ function RootRouteView() {
             </AppSidebarLayout>
           </CommandPalette>
           <JiraPicker />
+          <JiraTransitionPicker />
+          <JiraCommentDialog />
+          <JiraCreateDialog />
+          <JiraThreadLinksBootstrap />
         </WebSocketConnectionSurface>
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function JiraThreadLinksBootstrap() {
+  useEffect(() => {
+    startJiraThreadLinksSubscription();
+    return () => {
+      stopJiraThreadLinksSubscription();
+    };
+  }, []);
+  return null;
 }
 
 function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
