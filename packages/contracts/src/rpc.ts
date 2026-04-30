@@ -34,6 +34,33 @@ import {
   GitStatusResult,
   GitStatusStreamEvent,
 } from "./git.ts";
+import {
+  JiraAddCommentInput,
+  JiraAuthError,
+  JiraComment,
+  JiraConfigError,
+  JiraCredentialsSnapshot,
+  JiraDecodeError,
+  JiraGetIssueInput,
+  JiraGetThreadLinkInput,
+  JiraIssue,
+  JiraIssueCreateInput,
+  JiraLinkThreadInput,
+  JiraListTransitionsInput,
+  JiraNetworkError,
+  JiraNotFoundError,
+  JiraRateLimitedError,
+  JiraSearchInput,
+  JiraSearchPage,
+  JiraSetCredentialsInput,
+  JiraStorageError,
+  JiraThreadLink,
+  JiraThreadLinksStreamEvent,
+  JiraTransition,
+  JiraTransitionIssueInput,
+  JiraUnlinkThreadInput,
+  JiraUser,
+} from "./jira.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
@@ -120,12 +147,28 @@ export const WS_METHODS = {
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
 
+  // Jira methods
+  jiraGetCredentials: "jira.getCredentials",
+  jiraSetCredentials: "jira.setCredentials",
+  jiraClearCredentials: "jira.clearCredentials",
+  jiraSearch: "jira.search",
+  jiraGetIssue: "jira.getIssue",
+  jiraCreateIssue: "jira.createIssue",
+  jiraListTransitions: "jira.listTransitions",
+  jiraTransitionIssue: "jira.transitionIssue",
+  jiraAddComment: "jira.addComment",
+  jiraCurrentUser: "jira.currentUser",
+  jiraLinkThread: "jira.linkThread",
+  jiraUnlinkThread: "jira.unlinkThread",
+  jiraGetThreadLink: "jira.getThreadLink",
+
   // Streaming subscriptions
   subscribeGitStatus: "subscribeGitStatus",
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
+  subscribeJiraThreadLinks: "subscribeJiraThreadLinks",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -364,6 +407,110 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+const JiraReadError = Schema.Union([
+  JiraConfigError,
+  JiraAuthError,
+  JiraNotFoundError,
+  JiraRateLimitedError,
+  JiraNetworkError,
+  JiraDecodeError,
+]);
+
+const JiraWriteError = Schema.Union([
+  JiraConfigError,
+  JiraAuthError,
+  JiraNotFoundError,
+  JiraRateLimitedError,
+  JiraNetworkError,
+  JiraDecodeError,
+  JiraStorageError,
+]);
+
+export const WsJiraGetCredentialsRpc = Rpc.make(WS_METHODS.jiraGetCredentials, {
+  payload: Schema.Struct({}),
+  success: JiraCredentialsSnapshot,
+  error: JiraStorageError,
+});
+
+export const WsJiraSetCredentialsRpc = Rpc.make(WS_METHODS.jiraSetCredentials, {
+  payload: JiraSetCredentialsInput,
+  success: JiraCredentialsSnapshot,
+  error: JiraStorageError,
+});
+
+export const WsJiraClearCredentialsRpc = Rpc.make(WS_METHODS.jiraClearCredentials, {
+  payload: Schema.Struct({}),
+  success: JiraCredentialsSnapshot,
+  error: JiraStorageError,
+});
+
+export const WsJiraSearchRpc = Rpc.make(WS_METHODS.jiraSearch, {
+  payload: JiraSearchInput,
+  success: JiraSearchPage,
+  error: JiraReadError,
+});
+
+export const WsJiraGetIssueRpc = Rpc.make(WS_METHODS.jiraGetIssue, {
+  payload: JiraGetIssueInput,
+  success: JiraIssue,
+  error: JiraReadError,
+});
+
+export const WsJiraCreateIssueRpc = Rpc.make(WS_METHODS.jiraCreateIssue, {
+  payload: JiraIssueCreateInput,
+  success: JiraIssue,
+  error: JiraWriteError,
+});
+
+export const WsJiraListTransitionsRpc = Rpc.make(WS_METHODS.jiraListTransitions, {
+  payload: JiraListTransitionsInput,
+  success: Schema.Array(JiraTransition),
+  error: JiraReadError,
+});
+
+export const WsJiraTransitionIssueRpc = Rpc.make(WS_METHODS.jiraTransitionIssue, {
+  payload: JiraTransitionIssueInput,
+  success: Schema.Struct({ ok: Schema.Literal(true) }),
+  error: JiraWriteError,
+});
+
+export const WsJiraAddCommentRpc = Rpc.make(WS_METHODS.jiraAddComment, {
+  payload: JiraAddCommentInput,
+  success: JiraComment,
+  error: JiraWriteError,
+});
+
+export const WsJiraCurrentUserRpc = Rpc.make(WS_METHODS.jiraCurrentUser, {
+  payload: Schema.Struct({}),
+  success: JiraUser,
+  error: JiraReadError,
+});
+
+export const WsJiraLinkThreadRpc = Rpc.make(WS_METHODS.jiraLinkThread, {
+  payload: JiraLinkThreadInput,
+  success: JiraThreadLink,
+  error: JiraStorageError,
+});
+
+export const WsJiraUnlinkThreadRpc = Rpc.make(WS_METHODS.jiraUnlinkThread, {
+  payload: JiraUnlinkThreadInput,
+  success: Schema.Struct({ ok: Schema.Literal(true) }),
+  error: JiraStorageError,
+});
+
+export const WsJiraGetThreadLinkRpc = Rpc.make(WS_METHODS.jiraGetThreadLink, {
+  payload: JiraGetThreadLinkInput,
+  success: Schema.NullOr(JiraThreadLink),
+  error: JiraStorageError,
+});
+
+export const WsSubscribeJiraThreadLinksRpc = Rpc.make(WS_METHODS.subscribeJiraThreadLinks, {
+  payload: Schema.Struct({}),
+  success: JiraThreadLinksStreamEvent,
+  error: JiraStorageError,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -402,4 +549,18 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationReplayEventsRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsJiraGetCredentialsRpc,
+  WsJiraSetCredentialsRpc,
+  WsJiraClearCredentialsRpc,
+  WsJiraSearchRpc,
+  WsJiraGetIssueRpc,
+  WsJiraCreateIssueRpc,
+  WsJiraListTransitionsRpc,
+  WsJiraTransitionIssueRpc,
+  WsJiraAddCommentRpc,
+  WsJiraCurrentUserRpc,
+  WsJiraLinkThreadRpc,
+  WsJiraUnlinkThreadRpc,
+  WsJiraGetThreadLinkRpc,
+  WsSubscribeJiraThreadLinksRpc,
 );

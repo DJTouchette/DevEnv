@@ -7,6 +7,7 @@ import {
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
+  type JiraThreadLinksStreamEvent,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
@@ -32,6 +33,9 @@ import { ServerConfig } from "./config.ts";
 import { GitCore } from "./git/Services/GitCore.ts";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { GitStatusBroadcaster } from "./git/Services/GitStatusBroadcaster.ts";
+import { JiraClient } from "./jira/Services/JiraClient.ts";
+import { JiraCredentials } from "./jira/Services/JiraCredentials.ts";
+import { JiraThreadLinks } from "./jira/Services/JiraThreadLinks.ts";
 import { Keybindings } from "./keybindings.ts";
 import { Open, resolveAvailableEditors } from "./open.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
@@ -153,6 +157,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const serverAuth = yield* ServerAuth;
       const bootstrapCredentials = yield* BootstrapCredentialService;
       const sessions = yield* SessionCredentialService;
+      const jiraClient = yield* JiraClient;
+      const jiraCredentials = yield* JiraCredentials;
+      const jiraThreadLinks = yield* JiraThreadLinks;
       const serverCommandId = (tag: string) =>
         CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
@@ -1029,6 +1036,120 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               return Stream.concat(Stream.fromIterable(snapshotEvents), liveEvents);
             }),
             { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.jiraGetCredentials]: (_input) =>
+          observeRpcEffect(WS_METHODS.jiraGetCredentials, jiraCredentials.snapshot, {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraSetCredentials]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraSetCredentials, jiraCredentials.set(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraClearCredentials]: (_input) =>
+          observeRpcEffect(WS_METHODS.jiraClearCredentials, jiraCredentials.clear, {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraSearch]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraSearch, jiraClient.search(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraGetIssue]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraGetIssue,
+            jiraClient.getIssue({ issueKey: input.issueKey }),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraCreateIssue]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraCreateIssue, jiraClient.createIssue(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraListTransitions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraListTransitions,
+            jiraClient.listTransitions({ issueKey: input.issueKey }),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraTransitionIssue]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraTransitionIssue,
+            jiraClient
+              .transitionIssue({ issueKey: input.issueKey, transitionId: input.transitionId })
+              .pipe(Effect.as({ ok: true as const })),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraAddComment]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraAddComment,
+            jiraClient.addComment({ issueKey: input.issueKey, body: input.body }),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraCurrentUser]: (_input) =>
+          observeRpcEffect(WS_METHODS.jiraCurrentUser, jiraClient.currentUser, {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraLinkThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraLinkThread,
+            jiraThreadLinks.link({ threadId: input.threadId, issueKey: input.issueKey }),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraUnlinkThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraUnlinkThread,
+            jiraThreadLinks.unlink(input.threadId).pipe(Effect.as({ ok: true as const })),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraGetThreadLink]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraGetThreadLink,
+            jiraThreadLinks.get(input.threadId).pipe(
+              Effect.map(
+                Option.match({
+                  onNone: () => null,
+                  onSome: (link) => link,
+                }),
+              ),
+            ),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.subscribeJiraThreadLinks]: (_input) =>
+          observeRpcStreamEffect(
+            WS_METHODS.subscribeJiraThreadLinks,
+            Effect.gen(function* () {
+              const initial = yield* jiraThreadLinks.list;
+              const liveStream = jiraThreadLinks.streamChanges.pipe(
+                Stream.map(
+                  (change) =>
+                    ({
+                      type: "change" as const,
+                      change,
+                    }) satisfies JiraThreadLinksStreamEvent,
+                ),
+              );
+              const threadDeletions = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filter(
+                  (event): event is Extract<OrchestrationEvent, { type: "thread.deleted" }> =>
+                    event.type === "thread.deleted",
+                ),
+                Stream.tap((event) =>
+                  jiraThreadLinks
+                    .unlink(event.payload.threadId)
+                    .pipe(Effect.ignoreCause({ log: true })),
+                ),
+                Stream.drain,
+              );
+              yield* Effect.forkScoped(Stream.runDrain(threadDeletions));
+              return Stream.concat(
+                Stream.make({
+                  type: "snapshot" as const,
+                  links: initial,
+                } satisfies JiraThreadLinksStreamEvent),
+                liveStream,
+              );
+            }).pipe(
+              Effect.catchTag("JiraStorageError", (cause) => Effect.fail(cause)),
+            ),
+            { "rpc.aggregate": "jira" },
           ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           observeRpcStreamEffect(

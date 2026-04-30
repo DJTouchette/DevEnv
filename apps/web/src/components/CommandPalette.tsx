@@ -15,11 +15,16 @@ import {
   ArrowLeftIcon,
   ArrowUpIcon,
   CornerLeftUpIcon,
+  ExternalLinkIcon,
   FolderIcon,
   FolderPlusIcon,
+  Link2Icon,
+  Link2OffIcon,
   MessageSquareIcon,
+  PlusCircleIcon,
   SettingsIcon,
   SquarePenIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -42,6 +47,10 @@ import {
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useSettings } from "../hooks/useSettings";
 import { readLocalApi } from "../localApi";
+import { setJiraPickerOpen } from "../jiraPickerOpenState";
+import { setJiraActionDialog } from "../jiraActionDialogState";
+import { useLinkedJiraIssue } from "../jiraThreadLinksState";
+import { getPrimaryEnvironmentConnection } from "../environments/runtime";
 import {
   startNewThreadInProjectFromContext,
   startNewThreadFromContext,
@@ -324,6 +333,7 @@ function OpenCommandPaletteDialog() {
   );
 
   const activeThreadId = activeThread?.id;
+  const linkedJiraIssue = useLinkedJiraIssue(activeThreadId);
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
@@ -694,6 +704,110 @@ function OpenCommandPaletteDialog() {
       keepOpen: true,
       run: async () => {
         openAddProjectFlow();
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:jira:search",
+    searchTerms: ["jira", "search", "issue", "ticket"],
+    title: "Jira: Search issues",
+    icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "jira.picker.toggle",
+    run: async () => {
+      setJiraPickerOpen(true);
+    },
+  });
+
+  if (activeThreadId) {
+    actionItems.push({
+      kind: "action",
+      value: "action:jira:link",
+      searchTerms: ["jira", "link", "issue", "ticket", "thread"],
+      title: "Jira: Link issue to current thread",
+      icon: <Link2Icon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "jira.linkCurrent",
+      run: async () => {
+        setJiraPickerOpen(true, { kind: "link", threadId: activeThreadId });
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:jira:create",
+    searchTerms: ["jira", "create", "new", "issue", "ticket"],
+    title: activeThreadId
+      ? "Jira: Create issue and link to current thread"
+      : "Jira: Create issue",
+    icon: <PlusCircleIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "jira.create",
+    run: async () => {
+      setJiraActionDialog({ kind: "create", threadId: activeThreadId ?? null });
+    },
+  });
+
+  if (activeThreadId && linkedJiraIssue) {
+    const linkedKey = linkedJiraIssue.issueKey;
+    actionItems.push({
+      kind: "action",
+      value: "action:jira:open-linked",
+      searchTerms: ["jira", "open", "linked", linkedKey],
+      title: `Jira: Open ${linkedKey} in browser`,
+      icon: <ExternalLinkIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "jira.openLinked",
+      run: async () => {
+        const url = `${linkedJiraIssue.baseUrl.replace(/\/+$/, "")}/browse/${linkedKey}`;
+        const localApi = readLocalApi();
+        if (localApi) {
+          await localApi.shell.openExternal(url);
+        } else if (typeof window !== "undefined") {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:jira:transition",
+      searchTerms: ["jira", "transition", "status", "move", linkedKey],
+      title: `Jira: Transition ${linkedKey}`,
+      icon: <WorkflowIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "jira.transition",
+      run: async () => {
+        setJiraActionDialog({
+          kind: "transition",
+          threadId: activeThreadId,
+          issueKey: linkedKey,
+        });
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:jira:comment",
+      searchTerms: ["jira", "comment", linkedKey],
+      title: `Jira: Comment on ${linkedKey}`,
+      icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "jira.comment",
+      run: async () => {
+        setJiraActionDialog({
+          kind: "comment",
+          threadId: activeThreadId,
+          issueKey: linkedKey,
+        });
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:jira:unlink",
+      searchTerms: ["jira", "unlink", linkedKey],
+      title: `Jira: Unlink ${linkedKey} from current thread`,
+      icon: <Link2OffIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "jira.unlinkCurrent",
+      run: async () => {
+        await getPrimaryEnvironmentConnection().client.jira.unlinkThread({
+          threadId: activeThreadId,
+        });
       },
     });
   }

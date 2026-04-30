@@ -125,6 +125,22 @@ export interface WsRpcClient {
     readonly subscribeShell: RpcStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeShell>;
     readonly subscribeThread: RpcInputStreamMethod<typeof ORCHESTRATION_WS_METHODS.subscribeThread>;
   };
+  readonly jira: {
+    readonly getCredentials: RpcUnaryNoArgMethod<typeof WS_METHODS.jiraGetCredentials>;
+    readonly setCredentials: RpcUnaryMethod<typeof WS_METHODS.jiraSetCredentials>;
+    readonly clearCredentials: RpcUnaryNoArgMethod<typeof WS_METHODS.jiraClearCredentials>;
+    readonly currentUser: RpcUnaryNoArgMethod<typeof WS_METHODS.jiraCurrentUser>;
+    readonly search: RpcUnaryMethod<typeof WS_METHODS.jiraSearch>;
+    readonly getIssue: RpcUnaryMethod<typeof WS_METHODS.jiraGetIssue>;
+    readonly createIssue: RpcUnaryMethod<typeof WS_METHODS.jiraCreateIssue>;
+    readonly listTransitions: RpcUnaryMethod<typeof WS_METHODS.jiraListTransitions>;
+    readonly transitionIssue: RpcUnaryMethod<typeof WS_METHODS.jiraTransitionIssue>;
+    readonly addComment: RpcUnaryMethod<typeof WS_METHODS.jiraAddComment>;
+    readonly linkThread: RpcUnaryMethod<typeof WS_METHODS.jiraLinkThread>;
+    readonly unlinkThread: RpcUnaryMethod<typeof WS_METHODS.jiraUnlinkThread>;
+    readonly getThreadLink: RpcUnaryMethod<typeof WS_METHODS.jiraGetThreadLink>;
+    readonly subscribeThreadLinks: RpcStreamMethod<typeof WS_METHODS.subscribeJiraThreadLinks>;
+  };
 }
 
 export function createWsRpcClient(transport: WsTransport): WsRpcClient {
@@ -254,6 +270,37 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       subscribeThread: (input, listener, options) =>
         transport.subscribe(
           (client) => client[ORCHESTRATION_WS_METHODS.subscribeThread](input),
+          listener,
+          options,
+        ),
+    },
+    jira: {
+      getCredentials: () =>
+        transport.request((client) => client[WS_METHODS.jiraGetCredentials]({})),
+      setCredentials: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraSetCredentials](input)),
+      clearCredentials: () =>
+        transport.request((client) => client[WS_METHODS.jiraClearCredentials]({})),
+      currentUser: () => transport.request((client) => client[WS_METHODS.jiraCurrentUser]({})),
+      search: (input) => transport.request((client) => client[WS_METHODS.jiraSearch](input)),
+      getIssue: (input) => transport.request((client) => client[WS_METHODS.jiraGetIssue](input)),
+      createIssue: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraCreateIssue](input)),
+      listTransitions: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraListTransitions](input)),
+      transitionIssue: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraTransitionIssue](input)),
+      addComment: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraAddComment](input)),
+      linkThread: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraLinkThread](input)),
+      unlinkThread: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraUnlinkThread](input)),
+      getThreadLink: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetThreadLink](input)),
+      subscribeThreadLinks: (listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.subscribeJiraThreadLinks]({}),
           listener,
           options,
         ),

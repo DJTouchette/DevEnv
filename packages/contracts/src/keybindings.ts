@@ -47,6 +47,17 @@ export const MODEL_PICKER_KEYBINDING_COMMANDS = [
 ] as const;
 export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
 
+export const JIRA_KEYBINDING_COMMANDS = [
+  "jira.picker.toggle",
+  "jira.linkCurrent",
+  "jira.unlinkCurrent",
+  "jira.create",
+  "jira.transition",
+  "jira.comment",
+  "jira.openLinked",
+] as const;
+export type JiraKeybindingCommand = (typeof JIRA_KEYBINDING_COMMANDS)[number];
+
 const STATIC_KEYBINDING_COMMANDS = [
   "terminal.toggle",
   "terminal.split",
@@ -59,6 +70,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "editor.openFavorite",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
+  ...JIRA_KEYBINDING_COMMANDS,
 ] as const;
 
 export const SCRIPT_RUN_COMMAND_PATTERN = Schema.TemplateLiteral([
