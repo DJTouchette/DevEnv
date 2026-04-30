@@ -1,4 +1,5 @@
 import {
+  type AdoBuild,
   type AdoProject,
   type AdoProjectId,
   type AdoPullRequest,
@@ -23,6 +24,7 @@ import { setProjectExternalLinks, useProjectExternalLinks } from "../../projectE
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 
 const RECENT_PRS_LIMIT = 20;
+const RECENT_BUILDS_LIMIT = 15;
 
 export const ProjectDashboardAdoPanel = memo(function ProjectDashboardAdoPanel(props: {
   readonly projectKey: string;
@@ -45,6 +47,22 @@ export const ProjectDashboardAdoPanel = memo(function ProjectDashboardAdoPanel(p
         maxResults: RECENT_PRS_LIMIT,
       });
       return page.pullRequests;
+    },
+  });
+
+  const recentBuildsQuery = useQuery({
+    queryKey: ["ado-project-recent-builds", adoProjectId],
+    enabled: typeof adoProjectId === "string" && adoProjectId.length > 0,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    queryFn: async (): Promise<readonly AdoBuild[]> => {
+      if (!adoProjectId) return [];
+      const result = await getPrimaryEnvironmentConnection().client.ado.listRecentBuilds({
+        projectId: adoProjectId,
+        maxResults: RECENT_BUILDS_LIMIT,
+      });
+      return result.builds;
     },
   });
 
@@ -85,7 +103,10 @@ export const ProjectDashboardAdoPanel = memo(function ProjectDashboardAdoPanel(p
             variant="ghost"
             size="icon"
             aria-label="Refresh"
-            onClick={() => recentPrsQuery.refetch()}
+            onClick={() => {
+              void recentPrsQuery.refetch();
+              void recentBuildsQuery.refetch();
+            }}
           >
             <RefreshCwIcon className="size-3.5" />
           </Button>
@@ -214,6 +235,44 @@ export const ProjectDashboardAdoPanel = memo(function ProjectDashboardAdoPanel(p
                   />
                 ))}
               </ul>
+            )}
+          </Section>
+
+          <Section title="Recent builds">
+            {recentBuildsQuery.isPending ? (
+              <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
+                <Spinner /> Loading…
+              </div>
+            ) : recentBuildsQuery.isError ? (
+              <div className="px-2 py-3 text-xs text-destructive">
+                {recentBuildsQuery.error instanceof Error
+                  ? recentBuildsQuery.error.message
+                  : "Failed to load recent builds."}
+              </div>
+            ) : recentBuildsQuery.data && recentBuildsQuery.data.length > 0 ? (
+              <ul className="-mx-3 flex flex-col border-y">
+                {recentBuildsQuery.data.map((build) => (
+                  <AdoBuildRow
+                    key={build.id}
+                    build={build}
+                    isExpanded={
+                      expanded?.buildId === build.id && expanded?.projectId === build.projectId
+                    }
+                    onToggle={() =>
+                      expanded?.buildId === build.id
+                        ? setAdoPipelinesPanelExpanded(null)
+                        : setAdoPipelinesPanelExpanded({
+                            projectId: build.projectId,
+                            buildId: build.id,
+                          })
+                    }
+                  />
+                ))}
+              </ul>
+            ) : (
+              <div className="px-2 py-3 text-xs text-muted-foreground/70">
+                No completed builds yet.
+              </div>
             )}
           </Section>
         </>

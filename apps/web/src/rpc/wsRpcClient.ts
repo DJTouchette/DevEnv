@@ -158,6 +158,7 @@ export interface WsRpcClient {
     readonly unlinkPrThread: RpcUnaryMethod<typeof WS_METHODS.adoUnlinkPrThread>;
     readonly getPrThreadLink: RpcUnaryMethod<typeof WS_METHODS.adoGetPrThreadLink>;
     readonly getBuildTimeline: RpcUnaryMethod<typeof WS_METHODS.adoGetBuildTimeline>;
+    readonly listRecentBuilds: RpcUnaryMethod<typeof WS_METHODS.adoListRecentBuilds>;
     readonly subscribePrThreadLinks: RpcStreamMethod<
       typeof WS_METHODS.subscribeAdoPrThreadLinks
     >;
@@ -359,6 +360,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[WS_METHODS.adoGetPrThreadLink](input)),
       getBuildTimeline: (input) =>
         transport.request((client) => client[WS_METHODS.adoGetBuildTimeline](input)),
+      listRecentBuilds: (input) =>
+        transport.request((client) => client[WS_METHODS.adoListRecentBuilds](input)),
       subscribePrThreadLinks: (listener, options) =>
         transport.subscribe(
           (client) => client[WS_METHODS.subscribeAdoPrThreadLinks]({}),
