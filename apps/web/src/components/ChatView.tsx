@@ -51,6 +51,7 @@ import { setAdoActionDialog } from "../adoActionDialogState";
 import { getLinkedAdoPullRequest } from "../adoThreadLinksState";
 import { toggleAdoPipelinesPanel } from "../adoPipelinesPanelState";
 import { getPrimaryEnvironmentConnection } from "../environments/runtime";
+import { useWsConnectionStatus } from "../rpc/wsConnectionState";
 import { anchoredToastManager } from "./ui/toast";
 
 const openLinkedJiraIssue = async (threadId: ThreadId): Promise<void> => {
@@ -401,6 +402,15 @@ interface TerminalLaunchContext {
 
 type PersistentTerminalLaunchContext = Pick<TerminalLaunchContext, "cwd" | "worktreePath">;
 
+// Backstop: if the server hasn't acknowledged a dispatch within this window
+// (counted from the most recent connect-or-dispatch), assume the request was
+// dropped (e.g. a WS hiccup before the request reached the server) and clear
+// the stuck "Stop" state so the user can retry. The worktree-prep variant
+// allows for the extra cost of cloning a fresh worktree before the message is
+// even forwarded.
+const LOCAL_DISPATCH_ACK_TIMEOUT_MS = 60_000;
+const LOCAL_DISPATCH_PREPARING_WORKTREE_ACK_TIMEOUT_MS = 120_000;
+
 function useLocalDispatchState(input: {
   activeThread: Thread | undefined;
   activeLatestTurn: Thread["latestTurn"] | null;
@@ -410,6 +420,7 @@ function useLocalDispatchState(input: {
   threadError: string | null | undefined;
 }) {
   const [localDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
+  const wsConnectedAt = useWsConnectionStatus().connectedAt;
 
   const beginLocalDispatch = useCallback(
     (options?: { preparingWorktree?: boolean }) => {
@@ -458,6 +469,43 @@ function useLocalDispatchState(input: {
     }
     resetLocalDispatch();
   }, [resetLocalDispatch, serverAcknowledgedLocalDispatch]);
+
+  // Defensive backstop: clear a dispatch that the server never acknowledged.
+  // Reset the deadline whenever the WS reconnects so a long offline period
+  // doesn't burn the budget — the server snapshot on resubscribe is what
+  // normally resolves an in-flight dispatch.
+  const dispatchStartedAt = localDispatch?.startedAt ?? null;
+  const isPreparingWorktree = localDispatch?.preparingWorktree ?? false;
+  useEffect(() => {
+    if (dispatchStartedAt === null || serverAcknowledgedLocalDispatch) {
+      return;
+    }
+    const dispatchStartedAtMs = Date.parse(dispatchStartedAt);
+    const wsConnectedAtMs = wsConnectedAt !== null ? Date.parse(wsConnectedAt) : NaN;
+    const baselineMs = Number.isFinite(wsConnectedAtMs)
+      ? Math.max(dispatchStartedAtMs, wsConnectedAtMs)
+      : dispatchStartedAtMs;
+    const timeoutMs = isPreparingWorktree
+      ? LOCAL_DISPATCH_PREPARING_WORKTREE_ACK_TIMEOUT_MS
+      : LOCAL_DISPATCH_ACK_TIMEOUT_MS;
+    const remainingMs = Math.max(0, baselineMs + timeoutMs - Date.now());
+    const timeoutId = window.setTimeout(() => {
+      resetLocalDispatch();
+      anchoredToastManager.add({
+        title: "Message wasn't acknowledged",
+        description: "The server never confirmed your last send. Try again.",
+      });
+    }, remainingMs);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    dispatchStartedAt,
+    isPreparingWorktree,
+    resetLocalDispatch,
+    serverAcknowledgedLocalDispatch,
+    wsConnectedAt,
+  ]);
 
   return {
     beginLocalDispatch,

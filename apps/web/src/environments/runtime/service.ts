@@ -82,6 +82,8 @@ type ThreadDetailSubscriptionEntry = {
   refCount: number;
   lastAccessedAt: number;
   evictionTimeoutId: ReturnType<typeof setTimeout> | null;
+  reattachTimeoutId: ReturnType<typeof setTimeout> | null;
+  reattachAttempts: number;
 };
 
 const environmentConnections = new Map<EnvironmentId, EnvironmentConnection>();
@@ -264,6 +266,51 @@ function shouldEvictThreadDetailSubscription(entry: ThreadDetailSubscriptionEntr
   return entry.refCount === 0 && !isNonIdleThreadDetailSubscription(entry);
 }
 
+// The wsTransport intentionally drops a stream subscription after a non-
+// transport (application-level) error and never retries — see the
+// "does not retry stream subscriptions after application-level failures"
+// test in wsTransport.test.ts. For thread detail we still want a long-lived
+// subscription, so we schedule a self-heal re-attach with capped exponential
+// backoff. Without this, a transient server error orphans the subscription
+// silently and the UI stops receiving turn-completion events (manifesting as
+// a stuck "Stop" button).
+const THREAD_DETAIL_REATTACH_INITIAL_DELAY_MS = 1_000;
+const THREAD_DETAIL_REATTACH_MAX_DELAY_MS = 30_000;
+const THREAD_DETAIL_REATTACH_MAX_ATTEMPTS = 8;
+
+function clearThreadDetailReattachTimer(entry: ThreadDetailSubscriptionEntry): void {
+  if (entry.reattachTimeoutId !== null) {
+    clearTimeout(entry.reattachTimeoutId);
+    entry.reattachTimeoutId = null;
+  }
+}
+
+function scheduleThreadDetailReattach(entry: ThreadDetailSubscriptionEntry): void {
+  clearThreadDetailReattachTimer(entry);
+  if (entry.reattachAttempts >= THREAD_DETAIL_REATTACH_MAX_ATTEMPTS) {
+    console.error("Thread detail subscription giving up after repeated failures", {
+      threadId: entry.threadId,
+      environmentId: entry.environmentId,
+      attempts: entry.reattachAttempts,
+    });
+    return;
+  }
+  const delay = Math.min(
+    THREAD_DETAIL_REATTACH_INITIAL_DELAY_MS * Math.pow(2, entry.reattachAttempts),
+    THREAD_DETAIL_REATTACH_MAX_DELAY_MS,
+  );
+  entry.reattachAttempts += 1;
+  entry.reattachTimeoutId = setTimeout(() => {
+    entry.reattachTimeoutId = null;
+    if (!threadDetailSubscriptions.has(getThreadDetailSubscriptionKey(entry.environmentId, entry.threadId))) {
+      return;
+    }
+    if (attachThreadDetailSubscription(entry)) {
+      entry.lastAccessedAt = Date.now();
+    }
+  }, delay);
+}
+
 function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): boolean {
   if (entry.unsubscribeConnectionListener !== null) {
     entry.unsubscribeConnectionListener();
@@ -278,14 +325,36 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
     return false;
   }
 
+  clearThreadDetailReattachTimer(entry);
   entry.unsubscribe = connection.client.orchestration.subscribeThread(
     { threadId: entry.threadId },
     (item) => {
+      // Receiving any value confirms the subscription is healthy — reset
+      // the backoff so the next failure starts from the beginning.
+      entry.reattachAttempts = 0;
       if (item.kind === "snapshot") {
         useStore.getState().syncServerThreadDetail(item.snapshot.thread, entry.environmentId);
         return;
       }
       applyEnvironmentThreadDetailEvent(item.event, entry.environmentId);
+    },
+    {
+      onFailed: (error) => {
+        console.warn("Thread detail subscription dropped; scheduling re-attach", {
+          threadId: entry.threadId,
+          environmentId: entry.environmentId,
+          error,
+        });
+        entry.unsubscribe = NOOP;
+        if (
+          !threadDetailSubscriptions.has(
+            getThreadDetailSubscriptionKey(entry.environmentId, entry.threadId),
+          )
+        ) {
+          return;
+        }
+        scheduleThreadDetailReattach(entry);
+      },
     },
   );
   return true;
@@ -311,6 +380,7 @@ function disposeThreadDetailSubscriptionByKey(key: string): boolean {
   }
 
   clearThreadDetailSubscriptionEviction(entry);
+  clearThreadDetailReattachTimer(entry);
   entry.unsubscribeConnectionListener?.();
   entry.unsubscribeConnectionListener = null;
   threadDetailSubscriptions.delete(key);
@@ -452,6 +522,8 @@ export function retainThreadDetailSubscription(
     refCount: 1,
     lastAccessedAt: Date.now(),
     evictionTimeoutId: null,
+    reattachTimeoutId: null,
+    reattachAttempts: 0,
   };
   threadDetailSubscriptions.set(key, entry);
   if (!attachThreadDetailSubscription(entry)) {

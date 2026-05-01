@@ -115,24 +115,73 @@ export function createEnvironmentConnection(
     },
   );
 
-  const unsubShell = input.client.orchestration.subscribeShell(
-    (item: Parameters<Parameters<WsRpcClient["orchestration"]["subscribeShell"]>[0]>[0]) => {
-      if (item.kind === "snapshot") {
-        input.syncShellSnapshot(item.snapshot, environmentId);
-        bootstrapGate.resolve();
-        return;
-      }
-      input.applyShellEvent(item, environmentId);
-    },
-    {
-      onResubscribe: () => {
-        if (disposed) {
+  // Shell stream is the spine of the sidebar — if it dies on an app-level
+  // error, the whole UI goes silently stale. Mirror the thread subscription
+  // self-heal: capped exponential backoff, reset on any successful frame.
+  const SHELL_REATTACH_INITIAL_DELAY_MS = 1_000;
+  const SHELL_REATTACH_MAX_DELAY_MS = 30_000;
+  const SHELL_REATTACH_MAX_ATTEMPTS = 8;
+  let currentShellUnsubscribe: () => void = () => undefined;
+  let shellReattachTimer: ReturnType<typeof setTimeout> | null = null;
+  let shellReattachAttempts = 0;
+
+  const attachShell = () => {
+    if (disposed) {
+      return;
+    }
+    currentShellUnsubscribe = input.client.orchestration.subscribeShell(
+      (item: Parameters<Parameters<WsRpcClient["orchestration"]["subscribeShell"]>[0]>[0]) => {
+        // Receiving a frame confirms the subscription is healthy — reset
+        // backoff so the next failure starts at the bottom of the curve.
+        shellReattachAttempts = 0;
+        if (item.kind === "snapshot") {
+          input.syncShellSnapshot(item.snapshot, environmentId);
+          bootstrapGate.resolve();
           return;
         }
-        bootstrapGate.reset();
+        input.applyShellEvent(item, environmentId);
       },
-    },
-  );
+      {
+        onResubscribe: () => {
+          if (disposed) {
+            return;
+          }
+          bootstrapGate.reset();
+        },
+        onFailed: (error) => {
+          if (disposed) {
+            return;
+          }
+          console.warn("Shell subscription dropped; scheduling re-attach", { error });
+          currentShellUnsubscribe = () => undefined;
+          scheduleShellReattach();
+        },
+      },
+    );
+  };
+
+  const scheduleShellReattach = () => {
+    if (disposed || shellReattachTimer !== null) {
+      return;
+    }
+    if (shellReattachAttempts >= SHELL_REATTACH_MAX_ATTEMPTS) {
+      console.error("Shell subscription giving up after repeated failures", {
+        attempts: shellReattachAttempts,
+      });
+      return;
+    }
+    const delay = Math.min(
+      SHELL_REATTACH_INITIAL_DELAY_MS * Math.pow(2, shellReattachAttempts),
+      SHELL_REATTACH_MAX_DELAY_MS,
+    );
+    shellReattachAttempts += 1;
+    shellReattachTimer = setTimeout(() => {
+      shellReattachTimer = null;
+      attachShell();
+    }, delay);
+  };
+
+  attachShell();
 
   const unsubTerminalEvent = input.client.terminal.onEvent(
     (event: Parameters<Parameters<WsRpcClient["terminal"]["onEvent"]>[0]>[0]) => {
@@ -142,7 +191,11 @@ export function createEnvironmentConnection(
 
   const cleanup = () => {
     disposed = true;
-    unsubShell();
+    if (shellReattachTimer !== null) {
+      clearTimeout(shellReattachTimer);
+      shellReattachTimer = null;
+    }
+    currentShellUnsubscribe();
     unsubTerminalEvent();
     unsubLifecycle();
     unsubConfig();

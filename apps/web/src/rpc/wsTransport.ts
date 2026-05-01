@@ -25,6 +25,11 @@ import { isTransportConnectionErrorMessage } from "./transportError";
 interface SubscribeOptions {
   readonly retryDelay?: Duration.Input;
   readonly onResubscribe?: () => void;
+  // Called once when the subscription loop terminates due to an
+  // application-level (non-transport) error. The transport itself does not
+  // retry these — callers that own a longer-lived subscription concept (e.g.
+  // a thread detail subscription) can use this to schedule a re-attach.
+  readonly onFailed?: (error: string) => void;
 }
 
 interface RequestOptions {
@@ -38,6 +43,7 @@ interface TransportSession {
   readonly clientPromise: Promise<WsRpcProtocolClient>;
   readonly clientScope: Scope.Closeable;
   readonly runtime: ManagedRuntime.ManagedRuntime<RpcClient.Protocol, never>;
+  closed: boolean;
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -56,6 +62,8 @@ export class WsTransport {
   private nextSessionId = 0;
   private activeSessionId = 0;
   private session: TransportSession;
+  private paused = false;
+  private resumeWaiters: Array<() => void> = [];
 
   constructor(
     url: WsRpcProtocolSocketUrlProvider,
@@ -66,10 +74,27 @@ export class WsTransport {
     this.session = this.createSession();
   }
 
+  // Block while the transport is paused (typically: the browser tab is
+  // hidden). The current session is closed during pause; we only return once
+  // resume() has installed a fresh one. Resolves immediately when not paused.
+  private waitForResume(): Promise<void> {
+    if (!this.paused) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.resumeWaiters.push(resolve);
+    });
+  }
+
   async request<TSuccess>(
     execute: (client: WsRpcProtocolClient) => Effect.Effect<TSuccess, Error, never>,
     _options?: RequestOptions,
   ): Promise<TSuccess> {
+    if (this.disposed) {
+      throw new Error("Transport disposed");
+    }
+
+    await this.waitForResume();
     if (this.disposed) {
       throw new Error("Transport disposed");
     }
@@ -83,6 +108,11 @@ export class WsTransport {
     connect: (client: WsRpcProtocolClient) => Stream.Stream<TValue, Error, never>,
     listener: (value: TValue) => void,
   ): Promise<void> {
+    if (this.disposed) {
+      throw new Error("Transport disposed");
+    }
+
+    await this.waitForResume();
     if (this.disposed) {
       throw new Error("Transport disposed");
     }
@@ -124,6 +154,11 @@ export class WsTransport {
           return;
         }
 
+        await this.waitForResume();
+        if (!active || this.disposed) {
+          return;
+        }
+
         const session = this.session;
         try {
           if (hasReceivedValue) {
@@ -153,6 +188,13 @@ export class WsTransport {
             return;
           }
 
+          // If pause() interrupted the stream, treat it like a session
+          // change: re-iterate so the loop blocks at waitForResume() instead
+          // of bubbling up as an application-level failure.
+          if (this.paused) {
+            continue;
+          }
+
           if (session !== this.session) {
             continue;
           }
@@ -162,6 +204,11 @@ export class WsTransport {
             console.warn("WebSocket RPC subscription failed", {
               error: formattedError,
             });
+            try {
+              options?.onFailed?.(formattedError);
+            } catch {
+              // Swallow caller errors so we still terminate cleanly.
+            }
             return;
           }
 
@@ -202,18 +249,83 @@ export class WsTransport {
     await reconnectOperation;
   }
 
+  // Close the current socket and stall further work until resume(). Used when
+  // the browser tab becomes hidden — there's no point fighting the 5s ping
+  // cadence against background-tab timer throttling, so we go quiet and rely
+  // on the server's snapshot replay to catch up on resume.
+  async pause() {
+    if (this.disposed || this.paused) {
+      return;
+    }
+
+    const pauseOperation = this.reconnectChain.then(async () => {
+      if (this.disposed || this.paused) {
+        return;
+      }
+      this.paused = true;
+      clearAllTrackedRpcRequests();
+      // Leave this.session pointing at the about-to-close session. Anyone
+      // currently inside an `await session.clientPromise` will see the runtime
+      // tear down and reject; the subscribe loop catches that and waits at
+      // its next iteration's waitForResume() barrier.
+      await this.closeSession(this.session);
+    });
+
+    this.reconnectChain = pauseOperation.catch(() => undefined);
+    await pauseOperation;
+  }
+
+  async resume() {
+    if (this.disposed || !this.paused) {
+      return;
+    }
+
+    const resumeOperation = this.reconnectChain.then(async () => {
+      if (this.disposed || !this.paused) {
+        return;
+      }
+      // Replace the closed session with a fresh one before flipping the flag,
+      // so waiters that wake up immediately find a usable session.
+      this.session = this.createSession();
+      this.paused = false;
+      const waiters = this.resumeWaiters;
+      this.resumeWaiters = [];
+      for (const wake of waiters) {
+        wake();
+      }
+    });
+
+    this.reconnectChain = resumeOperation.catch(() => undefined);
+    await resumeOperation;
+  }
+
   async dispose() {
     if (this.disposed) {
       return;
     }
     this.disposed = true;
+    // Wake any pause-blocked callers so they can observe `disposed` and bail.
+    const waiters = this.resumeWaiters ?? [];
+    this.resumeWaiters = [];
+    for (const wake of waiters) {
+      wake();
+    }
     await this.closeSession(this.session);
   }
 
-  private closeSession(session: TransportSession) {
-    return session.runtime.runPromise(Scope.close(session.clientScope, Exit.void)).finally(() => {
+  private async closeSession(session: TransportSession) {
+    if (session.closed) {
+      return;
+    }
+    session.closed = true;
+    try {
+      await session.runtime.runPromise(Scope.close(session.clientScope, Exit.void));
+    } catch {
+      // The runtime may already be torn down; swallowing here keeps callers
+      // (dispose/pause/reconnect) from leaking unhandled rejections.
+    } finally {
       session.runtime.dispose();
-    });
+    }
   }
 
   private createSession(): TransportSession {
@@ -230,10 +342,19 @@ export class WsTransport {
       ),
     );
     const clientScope = runtime.runSync(Scope.make());
+    const clientPromise = runtime.runPromise(
+      Scope.provide(clientScope)(makeWsRpcProtocolClient),
+    );
+    // Attach a default rejection handler so callers that haven't awaited the
+    // promise yet (e.g. a session closed before any request fired) don't
+    // surface as unhandled rejections. Real consumers attach their own
+    // handlers via `await`.
+    clientPromise.catch(() => undefined);
     return {
       runtime,
       clientScope,
-      clientPromise: runtime.runPromise(Scope.provide(clientScope)(makeWsRpcProtocolClient)),
+      clientPromise,
+      closed: false,
     };
   }
 

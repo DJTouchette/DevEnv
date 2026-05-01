@@ -940,6 +940,123 @@ describe("WsTransport", () => {
     await transport.dispose();
   });
 
+  it("invokes onFailed when the subscription gives up on an application-level error", async () => {
+    const transport = createTransport("ws://localhost:3020");
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const onFailed = vi.fn();
+
+    const unsubscribe = transport.subscribe(
+      () => Stream.fail(new Error("Thread thread-x was not found")),
+      vi.fn(),
+      { retryDelay: 10, onFailed },
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+    getSocket().open();
+
+    await waitFor(() => {
+      expect(onFailed).toHaveBeenCalledWith("Thread thread-x was not found");
+    });
+    expect(onFailed).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
+  it("closes the socket on pause and re-attaches subscriptions on resume", async () => {
+    const transport = createTransport("ws://localhost:3020");
+    const listener = vi.fn();
+
+    const unsubscribe = transport.subscribe(
+      (client) => client[WS_METHODS.subscribeServerLifecycle]({}),
+      listener,
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+    const firstSocket = getSocket();
+    firstSocket.open();
+    await waitFor(() => {
+      expect(firstSocket.sent).toHaveLength(1);
+    });
+
+    await transport.pause();
+
+    expect(firstSocket.readyState).toBe(MockWebSocket.CLOSED);
+    // While paused, no new socket should appear.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sockets).toHaveLength(1);
+
+    await transport.resume();
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(2);
+    });
+    const secondSocket = getSocket();
+    expect(secondSocket).not.toBe(firstSocket);
+    secondSocket.open();
+    await waitFor(() => {
+      expect(secondSocket.sent).toHaveLength(1);
+    });
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
+  it("treats pause as idempotent and resume as a no-op when not paused", async () => {
+    const transport = createTransport("ws://localhost:3020");
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+    getSocket().open();
+
+    // resume() before any pause is a no-op.
+    await transport.resume();
+    expect(sockets).toHaveLength(1);
+
+    // First pause closes the socket; second pause is a no-op.
+    await transport.pause();
+    expect(getSocket().readyState).toBe(MockWebSocket.CLOSED);
+    await transport.pause();
+    expect(sockets).toHaveLength(1);
+
+    await transport.dispose();
+  });
+
+  it("does not invoke onFailed for transport-connection errors", async () => {
+    const transport = createTransport("ws://localhost:3020");
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const onFailed = vi.fn();
+    let attempts = 0;
+
+    const unsubscribe = transport.subscribe(
+      () =>
+        Stream.suspend(() => {
+          attempts += 1;
+          return Stream.fail(new Error("SocketCloseError: WebSocket closed"));
+        }),
+      vi.fn(),
+      { retryDelay: 10, onFailed },
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+    getSocket().open();
+
+    await waitFor(() => {
+      expect(attempts).toBeGreaterThanOrEqual(2);
+    });
+    expect(onFailed).not.toHaveBeenCalled();
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
   it("keeps retrying stream subscriptions after transport failures", async () => {
     const transport = createTransport("ws://localhost:3020");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);

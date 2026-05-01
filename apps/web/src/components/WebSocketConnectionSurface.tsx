@@ -200,15 +200,39 @@ export function WebSocketConnectionCoordinator() {
     const handleFocus = () => {
       triggerAutoReconnect("focus");
     };
+    // Background tabs throttle setTimeout to ~once-per-minute, which the 5s
+    // RPC ping cadence can't survive — the latch opens, the socket dies, and
+    // the page comes back to a "Reconnecting…" toast. Instead, pause the WS
+    // when the tab hides (server keeps doing the work, we just don't stream
+    // events) and resume on return — the server's first frame on resubscribe
+    // is a fresh thread snapshot, so the UI catches up instantly.
+    const handleVisibilityChange = () => {
+      const connection = getPrimaryEnvironmentConnection();
+      if (document.visibilityState === "hidden") {
+        void connection.client.pause().catch((error) => {
+          console.warn("WebSocket pause failed", { error });
+        });
+      } else {
+        void connection.client.resume().catch((error) => {
+          console.warn("WebSocket resume failed", { error });
+        });
+      }
+    };
 
     syncBrowserOnlineStatus();
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", syncBrowserOnlineStatus);
     window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    // If the page mounted while already hidden, pause immediately.
+    if (document.visibilityState === "hidden") {
+      handleVisibilityChange();
+    }
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", syncBrowserOnlineStatus);
       window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 

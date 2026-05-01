@@ -10,6 +10,8 @@ function createTestClient() {
   const terminalListeners = new Set<(event: any) => void>();
   const shellListeners = new Set<(event: any) => void>();
   let shellResubscribe: (() => void) | undefined;
+  let shellOnFailed: ((error: string) => void) | undefined;
+  let shellSubscribeCount = 0;
 
   const client = {
     dispose: vi.fn(async () => undefined),
@@ -41,14 +43,22 @@ function createTestClient() {
       getTurnDiff: vi.fn(async () => undefined),
       getFullThreadDiff: vi.fn(async () => undefined),
       subscribeShell: vi.fn(
-        (listener: (event: any) => void, options?: { onResubscribe?: () => void }) => {
+        (
+          listener: (event: any) => void,
+          options?: {
+            onResubscribe?: () => void;
+            onFailed?: (error: string) => void;
+          },
+        ) => {
+          shellSubscribeCount += 1;
           shellListeners.add(listener);
           shellResubscribe = options?.onResubscribe;
+          shellOnFailed = options?.onFailed;
           queueMicrotask(() => {
             listener({
               kind: "snapshot",
               snapshot: {
-                snapshotSequence: 1,
+                snapshotSequence: shellSubscribeCount,
                 projects: [],
                 threads: [],
                 updatedAt: "2026-04-12T00:00:00.000Z",
@@ -59,6 +69,9 @@ function createTestClient() {
             shellListeners.delete(listener);
             if (shellResubscribe === options?.onResubscribe) {
               shellResubscribe = undefined;
+            }
+            if (shellOnFailed === options?.onFailed) {
+              shellOnFailed = undefined;
             }
           };
         },
@@ -139,6 +152,10 @@ function createTestClient() {
         });
       }
     },
+    triggerShellFailure: (error = "simulated app error") => {
+      shellOnFailed?.(error);
+    },
+    getShellSubscribeCount: () => shellSubscribeCount,
   };
 }
 
@@ -203,6 +220,58 @@ describe("createEnvironmentConnection", () => {
     );
 
     await connection.dispose();
+  });
+
+  it("re-attaches the shell subscription after an app-level failure", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const environmentId = EnvironmentId.make("env-1");
+      const { client, triggerShellFailure, getShellSubscribeCount } = createTestClient();
+      const syncShellSnapshot = vi.fn();
+
+      const connection = createEnvironmentConnection({
+        kind: "saved",
+        knownEnvironment: {
+          id: "env-1",
+          label: "Remote env",
+          source: "manual",
+          target: {
+            httpBaseUrl: "http://example.test",
+            wsBaseUrl: "ws://example.test",
+          },
+          environmentId,
+        },
+        client,
+        applyShellEvent: vi.fn(),
+        syncShellSnapshot,
+        applyTerminalEvent: vi.fn(),
+      });
+
+      // Drain the queued snapshot from the initial subscription.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getShellSubscribeCount()).toBe(1);
+      expect(syncShellSnapshot).toHaveBeenCalledTimes(1);
+
+      // Simulate the wsTransport giving up on an app-level error.
+      triggerShellFailure("Thread shell stream blew up");
+
+      // No re-attach yet — we're inside the backoff window.
+      expect(getShellSubscribeCount()).toBe(1);
+
+      // First retry fires after ~1s.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(getShellSubscribeCount()).toBe(2);
+
+      // The fresh subscription emits its own snapshot on connect.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(syncShellSnapshot).toHaveBeenCalledTimes(2);
+
+      await connection.dispose();
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it("waits for a fresh shell snapshot after reconnect", async () => {

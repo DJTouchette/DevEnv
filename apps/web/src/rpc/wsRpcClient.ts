@@ -22,6 +22,7 @@ type RpcInput<TTag extends RpcTag> = Parameters<RpcMethod<TTag>>[0];
 
 interface StreamSubscriptionOptions {
   readonly onResubscribe?: () => void;
+  readonly onFailed?: (error: string) => void;
 }
 
 type RpcUnaryMethod<TTag extends RpcTag> =
@@ -55,6 +56,8 @@ interface GitRunStackedActionOptions {
 export interface WsRpcClient {
   readonly dispose: () => Promise<void>;
   readonly reconnect: () => Promise<void>;
+  readonly pause: () => Promise<void>;
+  readonly resume: () => Promise<void>;
   readonly terminal: {
     readonly open: RpcUnaryMethod<typeof WS_METHODS.terminalOpen>;
     readonly write: RpcUnaryMethod<typeof WS_METHODS.terminalWrite>;
@@ -175,6 +178,11 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
     reconnect: async () => {
       resetWsReconnectBackoff();
       await transport.reconnect();
+    },
+    pause: () => transport.pause(),
+    resume: async () => {
+      resetWsReconnectBackoff();
+      await transport.resume();
     },
     terminal: {
       open: (input) => transport.request((client) => client[WS_METHODS.terminalOpen](input)),
